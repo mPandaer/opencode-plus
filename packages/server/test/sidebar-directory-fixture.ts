@@ -15,7 +15,9 @@ await Effect.runPromise(
       fs: { filewatcher: false },
     })
     const server = yield* Effect.acquireRelease(
-      Effect.sync(() => Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request) => handler(request), idleTimeout: 0 })),
+      Effect.sync(() =>
+        Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request) => handler(request), idleTimeout: 0 }),
+      ),
       (server) => Effect.promise(() => server.stop(true)),
     )
     console.log(server.url.href)

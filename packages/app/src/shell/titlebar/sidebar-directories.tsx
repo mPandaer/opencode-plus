@@ -25,6 +25,7 @@ import { createSidebarSessionActivity, mergeSidebarSessions } from "./sidebar-se
 
 const DirectoryState = Persistence.struct({
   directories: Schema.mutable(Schema.Array(Schema.String)),
+  closed: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
   view: Persistence.optional(Schema.Literals(["directories", "projects", "list"])),
 })
 

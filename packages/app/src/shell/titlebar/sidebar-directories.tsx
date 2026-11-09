@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js"
+import { batch, createEffect, createMemo, For, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js"
 import { Key } from "@solid-primitives/keyed"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
@@ -123,7 +123,8 @@ function DirectorySidebar(props: {
   onCleanup(props.ctx.data.listen(({ details }) => activity.update(server, details)))
   createEffect(() => {
     if (!ready() || !enabled()) return
-    const known = new Set(state.directories.map(pathKey))
+    // Closing is an explicit preference, so historical discovery must never resurrect it.
+    const known = new Set([...state.directories, ...(state.closed ?? [])].map(pathKey))
     const added = sessions().flatMap((session) => {
       const directory = session.location.directory
       if (known.has(pathKey(directory))) return []
@@ -166,6 +167,32 @@ function DirectorySidebar(props: {
               if (result.isSuccess) await tabs.newDraft({ server, directory, worktree: "main" })
             }}
           />
+          <Menu placement="bottom-end">
+            <Menu.Trigger
+              as={IconButton}
+              icon={<Icon name="dot-grid" />}
+              variant="ghost-muted"
+              size="small"
+              aria-label={language.t("sidebar.directory.actions")}
+            />
+            <Menu.Portal>
+              <Menu.Content>
+                <div class="max-w-56 px-2 py-1 text-12-regular text-v2-text-text-muted">
+                  {language.t("sidebar.directory.kept")}
+                </div>
+                <Menu.Item
+                  onSelect={() =>
+                    batch(() => {
+                      setState("closed", (items) => [...(items ?? []), directory])
+                      setState("directories", (items) => items.filter((item) => pathKey(item) !== pathKey(directory)))
+                    })
+                  }
+                >
+                  {language.t("sidebar.directory.close")}
+                </Menu.Item>
+              </Menu.Content>
+            </Menu.Portal>
+          </Menu>
         </div>
         <For
           each={(grouped().get(pathKey(directory)) ?? []).slice(0, local.limits[pathKey(directory)] ?? 5)}

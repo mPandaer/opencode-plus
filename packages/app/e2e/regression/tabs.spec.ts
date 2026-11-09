@@ -16,7 +16,7 @@ import {
   sessionHref,
 } from "../utils/app"
 import { openFileLauncher, reviewTabs } from "../utils/side-panel"
-import { mockServers } from "../utils/mock-server"
+import { mockMissingLocation, mockServers } from "../utils/mock-server"
 import { fixture, mockStressTimeline } from "../utils/session-fixture"
 import { fileNode, mockWorkspace, openSession } from "../utils/workspace"
 import { expectSessionTitle } from "../utils/waits"
@@ -1120,14 +1120,7 @@ test("directory sidebar keeps unavailable groups and history while blocking crea
     },
     seed: { settings: { appearance: { tabLayout: "vertical" } } },
   })
-  await page.route("**/api/location?**", (route) => {
-    if (!missing || new URL(route.request().url()).searchParams.get("location[directory]") !== directory)
-      return route.fallback()
-    return route.fulfill({
-      status: 404,
-      json: { _tag: "LocationNotFoundError", location: { directory }, message: `Location not found: ${directory}` },
-    })
-  })
+  await mockMissingLocation(page, directory, () => missing)
   await page.goto(sessionHref("ses_unavailable_module"))
   const group = page.locator('[data-slot="vertical-tabs-sidebar"]').getByRole("group", { name: directory, exact: true })
   await expect(group.getByText("Preserved module history", { exact: true })).toBeVisible()
@@ -1150,6 +1143,8 @@ test("directory sidebar adds an empty chosen subdirectory, confirms its full pat
   const creates: unknown[] = []
   await mockWorkspace(page, {
     name: "Picker",
+    project: { sandboxes: [child] },
+    worktrees: () => [{ directory: root }, { directory: child, strategy: "git" }],
     flags: { working_directories: true },
     sessions: [{ id: "ses_picker", title: "Root history" }],
     fileList: (path) => (path === root ? [fileNode(root, "empty", "directory")] : []),

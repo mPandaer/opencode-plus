@@ -223,20 +223,48 @@ test("Local preserves a selected subdirectory and lets the user change it before
     .toEqual([{ directory: expect.stringMatching(/C:[\\/]OpenCode[\\/]Modules[\\/]module-b/) }])
 })
 
-test("an explicit checkout selection leaves the module while the directory editor honors its flag", async ({
-  page,
-}) => {
+for (const [enabled, chosen] of [
+  [false, "module"],
+  [false, "worktree-module"],
+  [true, "worktree"],
+  [true, "worktree-module"],
+] as const) {
+  test(`Local targets the ${enabled ? "chosen directory" : "legacy checkout"} for ${chosen} with working directories ${enabled}`, async ({
+    page,
+  }) => {
+    const root = "C:/OpenCode/RegisteredModule"
+    const worktree = `${root}/.worktrees/river`
+    const directory =
+      chosen === "module" ? `${root}/module-a` : chosen === "worktree" ? worktree : `${worktree}/module-a`
+    const created: unknown[] = []
+    const view = await openDraft(page, {
+      name: "RegisteredModule",
+      directory,
+      project: { worktree: root, canonical: root, sandboxes: [worktree] },
+      flags: { working_directories: enabled },
+      worktrees: () => [{ directory: root }, { directory: worktree, strategy: "git" }],
+      onSessionCreate: (body) => void created.push(body.location),
+    })
+    await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(enabled ? directory : root)
+    await view.editor.fill("Use the intended directory")
+    await submit(page).click()
+    await expect.poll(() => created).toEqual([{ directory: enabled ? directory : root }])
+  })
+}
+
+test("an explicit checkout selection leaves the module with working directories enabled", async ({ page }) => {
   const root = "C:/OpenCode/CheckoutSelection"
   const created: unknown[] = []
   const view = await openDraft(page, {
     name: "CheckoutSelection",
     directory: `${root}/module-a`,
     project: { worktree: root, canonical: root },
-    flags: { working_directories: false },
+    flags: { working_directories: true },
     worktrees: () => [{ directory: root }],
     onSessionCreate: (body) => void created.push(body.location),
   })
-  await expect(page.getByRole("button", { name: "Change working directory", exact: true })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Change working directory", exact: true })).toBeVisible()
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(`${root}/module-a`)
   await newSessionWorktree(page).click()
   await page.getByRole("option", { name: /CheckoutSelection C:\/OpenCode\/CheckoutSelection$/ }).click()
   await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(root)
@@ -245,7 +273,7 @@ test("an explicit checkout selection leaves the module while the directory edito
   await expect.poll(() => created).toEqual([{ directory: root }])
 })
 
-test("Local shows and targets the main checkout when the draft opened in a worktree", async ({ page }) => {
+test("Local shows and targets the main checkout when working directories are disabled", async ({ page }) => {
   const root = "C:/OpenCode/LocalFromWorktree"
 
   const worktree = `${root}/.worktrees/quiet-river`
@@ -254,6 +282,7 @@ test("Local shows and targets the main checkout when the draft opened in a workt
 
   const view = await openDraft(page, {
     name: "LocalFromWorktree",
+    flags: { working_directories: false },
     project: { sandboxes: [worktree] },
     worktrees: () => [{ directory: root }, { directory: worktree, strategy: "git" }],
     vcs: (directory) =>

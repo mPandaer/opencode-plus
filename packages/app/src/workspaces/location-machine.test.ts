@@ -32,6 +32,18 @@ function replay(events: LocationSyncEvent[], start: LocationSyncState = createLo
 
 const missing = replay([target(deleted), { type: "sync.missing", attempt: 1 }]).state
 
+test("a matching execution rejection marks a warm Location missing and invalidates pending sync results", () => {
+  const synced = replay([target(deleted), { type: "sync.succeeded", attempt: 1 }]).state
+  const rejected = transitionLocationSync(synced, { type: "execution.missing", location: deleted, attempt: 1 })
+  expect(rejected.state.status).toBe("missing")
+  expect(missingLocation(rejected.state, deleted)).toEqual(deleted)
+  expect(transitionLocationSync(rejected.state, { type: "sync.succeeded", attempt: 1 }).state).toBe(rejected.state)
+  expect(transitionLocationSync(synced, { type: "execution.missing", location: other, attempt: 1 }).state).toBe(synced)
+  expect(transitionLocationSync(synced, { type: "execution.missing", location: deleted, attempt: 0 }).state).toBe(
+    synced,
+  )
+})
+
 test("explicit restore retry keeps the missing notice and rejects results from the previous attempt", () => {
   const checking = transitionLocationSync(missing, { type: "retry.requested" })
   expect(checking.state).toEqual({ status: "syncing", attempt: 2, retries: 0, location: deleted, missing: true })

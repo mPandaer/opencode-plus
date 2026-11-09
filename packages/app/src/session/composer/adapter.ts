@@ -45,6 +45,7 @@ export function createActiveComposerAdapter(input: {
     session: () => ({
       id,
       directory: location().directory,
+      missingLocation: location().missingFromExecution,
       handoff,
       api: server.api.session,
       file: server.api.file,

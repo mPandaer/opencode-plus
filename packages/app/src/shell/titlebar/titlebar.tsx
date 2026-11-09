@@ -15,6 +15,7 @@ import { useLanguage } from "@/runtime/i18n/language"
 import { useSettings } from "@/settings/model"
 import { WindowsAppMenu } from "./windows-menu"
 import { createTitlebarHistory } from "./history"
+import { globalNewBusy, transitionGlobalNew, type GlobalNewEvent, type GlobalNewState } from "./global-new-machine"
 import { TitlebarTabStrip } from "@/shell/titlebar/tab-strip"
 import { macVerticalTrafficLights, SidebarToggle } from "@/shell/sidebar-toggle"
 import { SidebarInbox } from "@/shell/titlebar/inbox"
@@ -207,6 +208,33 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
             const tabs = useTabs()
             const pickDirectory = useDirectoryPicker()
             const tabsStore = tabs.store
+            const [newState, setNewState] = createSignal<GlobalNewState>({ status: "idle", attempt: 0 })
+            let newTimer: ReturnType<typeof setTimeout> | undefined
+            const newServer = () => {
+              const selection = layout.home.selection()
+              const conn =
+                global.servers.list().find((item) => ServerConnection.key(item) === selection.server) ??
+                global.servers.list()[0]
+              return conn ? ServerConnection.key(conn) : ""
+            }
+            const dispatchNew = (event: GlobalNewEvent) => {
+              const previous = untrack(newState)
+              const next = transitionGlobalNew(previous, event)
+              if (next === previous) return false
+              clearTimeout(newTimer)
+              setNewState(next)
+              if (globalNewBusy(next) && "server" in next)
+                newTimer = setTimeout(
+                  () => dispatchNew({ type: "timed-out", attempt: next.attempt, server: next.server }),
+                  30_000,
+                )
+              return true
+            }
+            createEffect(() => {
+              const server = newServer()
+              untrack(() => dispatchNew({ type: "target", server }))
+            })
+            onCleanup(() => dispatchNew({ type: "disposed" }))
 
             createEffect(() => {
               if (
@@ -298,23 +326,29 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                   const ctx = global.serverCtx(server)
                   if (!ctx) return false
 
-                  void ctx.sdk.api.location
-                    .get()
-                    .then(async (location) => {
-                      await ctx.workingDirectory.ready.promise
-                      if (location.experimental?.flags.working_directories === true) {
-                        const directory = ctx.workingDirectory.last()
-                        if (directory) {
-                          void tabs.newDraft({ server, directory, draftID, worktree: "main" }, "")
-                          return
-                        }
+                  if (!dispatchNew({ type: "start", server })) return true
+                  const claimed = newState()
+                  if (!("attempt" in claimed)) return true
+                  const attempt = claimed.attempt
+                  void Promise.all([ctx.sdk.api.location.get(), ctx.workingDirectory.ready.promise])
+                    .then(([location]) => {
+                      dispatchNew({ type: "target", server: newServer() })
+                      const enabled = location.experimental?.flags.working_directories === true
+                      const directory = enabled ? ctx.workingDirectory.last() : undefined
+                      if (!dispatchNew({ type: "resolved", attempt, server, pick: enabled && !directory })) return
+                      if (enabled && directory) {
+                        void tabs.newDraft({ server, directory, draftID, worktree: "main" }, "")
+                        return
+                      }
+                      if (enabled) {
                         pickDirectory({
                           server: conn,
                           title: language.t("session.new.directory.change"),
                           onSelect: (result) => {
+                            dispatchNew({ type: "target", server: newServer() })
+                            if (!dispatchNew({ type: "finished", attempt, server })) return
                             const directory = Array.isArray(result) ? result[0] : result
-                            if (!directory) return
-                            void tabs.newDraft({ server, directory, draftID, worktree: "main" }, "")
+                            if (directory) void tabs.newDraft({ server, directory, draftID, worktree: "main" }, "")
                           },
                         })
                         return
@@ -325,13 +359,14 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                         ctx.projects.list()[0]
                       if (project) void tabs.newDraft({ server, directory: project.worktree, draftID }, "")
                     })
-                    .catch((error) =>
+                    .catch((error) => {
+                      if (!dispatchNew({ type: "failed", attempt, server })) return
                       showToast({
                         variant: "error",
                         title: language.t("common.requestFailed"),
                         description: formatServerError(error, language.t),
-                      }),
-                    )
+                      })
+                    })
                   return true
                 }
               }

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 import { base64Encode } from "@opencode/util/encode"
 import { fixture } from "../utils/session-fixture"
-import { mockOpenCodeServer } from "../utils/mock-server"
+import { mockMissingLocation, mockOpenCodeServer } from "../utils/mock-server"
 import { installSseTransport } from "../utils/sse-transport"
 
 for (const endpoint of ["/api/location", "/api/agent"]) {
@@ -167,14 +167,7 @@ test("directory recovery restores the original path without migrating history", 
       items: [{ id: "msg_original", type: "user", text: "Keep original history", time: { created: 1 } }],
     }),
   })
-  await page.route("**/api/location?**", (route) => {
-    if (!missing || new URL(route.request().url()).searchParams.get("location[directory]") !== directory)
-      return route.fallback()
-    return route.fulfill({
-      status: 404,
-      json: { _tag: "LocationNotFoundError", location: { directory }, message: `Location not found: ${directory}` },
-    })
-  })
+  await mockMissingLocation(page, directory, () => missing)
   page.on("request", (request) => {
     if (request.method() === "POST" && /\/(move|prompt)$/.test(new URL(request.url()).pathname))
       mutations.push(request.url())
@@ -195,6 +188,33 @@ test("directory recovery restores the original path without migrating history", 
   expect(mutations).toEqual([])
 })
 
+test("a warm-deleted mounted session shows directory recovery after sending", async ({ page }) => {
+  const directory = "/projects/warm-module"
+  const sessionID = "ses_warm_deleted"
+  await mockOpenCodeServer(page, {
+    flags: { working_directories: true },
+    directory: fixture.directory,
+    project: fixture.project,
+    provider: fixture.provider,
+    sessions: [{ id: sessionID, projectID: fixture.project.id, directory }],
+    fileList: () => [],
+    pageMessages: () => ({
+      items: [{ id: "msg_warm", type: "user", text: "Warm original history", time: { created: 1 } }],
+    }),
+  })
+  await page.goto(`/server/${base64Encode(fixture.serverKey)}/session/${sessionID}`)
+  const prompt = page.getByRole("textbox", { name: "Prompt", exact: true })
+  await expect(prompt).toBeEditable()
+  await expect(page.getByText("Warm original history", { exact: true })).toBeVisible()
+  await mockMissingLocation(page, directory, () => true, /\/api\/session\/[^/]+\/prompt/, sessionID)
+  await prompt.fill("Continue in the deleted directory")
+  await page.locator('[data-action="composer-submit"]').click()
+  await expect(page.getByRole("button", { name: "Retry original directory", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Choose new location", exact: true })).toBeVisible()
+  await expect(page.getByText("Warm original history", { exact: true })).toBeVisible()
+  await expect(prompt).toHaveCount(0)
+})
+
 test("choosing a new location adds a directory without moving the unavailable session", async ({ page }) => {
   const directory = "/projects/old-module"
   const destination = "C:\\OpenCode\\SmokeProject"
@@ -212,13 +232,7 @@ test("choosing a new location adds a directory without moving the unavailable se
       items: [{ id: "msg_old", type: "user", text: "Original module transcript", time: { created: 1 } }],
     }),
   })
-  await page.route("**/api/location?**", (route) => {
-    if (new URL(route.request().url()).searchParams.get("location[directory]") !== directory) return route.fallback()
-    return route.fulfill({
-      status: 404,
-      json: { _tag: "LocationNotFoundError", location: { directory }, message: `Location not found: ${directory}` },
-    })
-  })
+  await mockMissingLocation(page, directory)
   page.on("request", (request) => {
     if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/move")) moves.push(request.url())
   })

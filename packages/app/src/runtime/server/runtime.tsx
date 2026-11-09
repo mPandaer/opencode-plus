@@ -376,6 +376,14 @@ function createServerController(
       set: setSidebarState,
       ready: sidebarReady,
       add: addSidebarDirectory,
+      close: (directory: string) => {
+        if (!sidebarReady()) return
+        batch(() => {
+          if (!(sidebarState.closed ?? []).some((item) => pathKey(item) === pathKey(directory)))
+            setSidebarState("closed", (items) => [...(items ?? []), directory])
+          setSidebarState("directories", (items) => items.filter((item) => pathKey(item) !== pathKey(directory)))
+        })
+      },
       revealed: revealedSession,
       reveal: (sessionID: string) => setRevealedSession(sessionID),
       revealedDone: () => setRevealedSession(undefined),

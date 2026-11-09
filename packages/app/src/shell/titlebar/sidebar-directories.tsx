@@ -316,16 +316,7 @@ function DirectorySidebar(props: {
                       <div class="max-w-56 px-2 py-1 text-12-regular text-v2-text-text-muted">
                         {language.t("sidebar.directory.kept")}
                       </div>
-                      <Menu.Item
-                        onSelect={() =>
-                          batch(() => {
-                            setState("closed", (items) => [...(items ?? []), directory])
-                            setState("directories", (items) =>
-                              items.filter((item) => pathKey(item) !== pathKey(directory)),
-                            )
-                          })
-                        }
-                      >
+                      <Menu.Item onSelect={() => props.ctx.directories.close(directory)}>
                         {language.t("sidebar.directory.close")}
                       </Menu.Item>
                     </Menu.Content>

@@ -18,6 +18,7 @@ export type WorkspaceLocation = LocationContext & {
   /** Set only when the server reports that this exact Location's folder does not exist. */
   readonly missing: LocationRef | undefined
   readonly retry: () => void
+  readonly missingFromExecution: (directory: string) => void
 }
 
 const context = createSimpleContext({
@@ -62,7 +63,8 @@ const context = createSimpleContext({
       timer = setTimeout(() => dispatch({ type: "sync.timed-out", attempt: effect.attempt }), effect.timeout)
       // Resolve freshly: a warm client or server Location does not prove its folder still exists.
       data.location.invalidate(effect.location)
-      void data.location.syncInfo(effect.location)
+      void data.location
+        .syncInfo(effect.location)
         .then(() => {
           dispatch({ type: "info.resolved", attempt: effect.attempt })
 
@@ -95,13 +97,21 @@ const context = createSimpleContext({
 
     const location = createMemo(() => serverSDK.ensureDirSdkContext(current()?.directory ?? ref().directory))
 
-    return createMemo<WorkspaceLocation>(() => ({
-      ...location(),
-      ref: ref(),
-      current: current(),
-      missing: missing(),
-      retry: () => dispatch({ type: "retry.requested" }),
-    }))
+    return createMemo<WorkspaceLocation>(() => {
+      const target = ref()
+      const state = syncState()
+      return {
+        ...location(),
+        ref: target,
+        current: current(),
+        missing: missing(),
+        retry: () => dispatch({ type: "retry.requested" }),
+        missingFromExecution: (directory) => {
+          if (state.status === "disposed" || target.workspaceID || directory !== target.directory) return
+          dispatch({ type: "execution.missing", attempt: state.attempt, location: target })
+        },
+      }
+    })
   },
 })
 

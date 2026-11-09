@@ -172,16 +172,15 @@ export function createNewSessionWorkspaceController(input: {
     () => data.location.info({ directory: sdk().directory })?.experimental?.flags.working_directories === true,
   )
 
-  // Local preserves a selected working directory inside the checkout. Managed worktrees retain
-  // the existing Local shortcut back to the main checkout; explicit checkout choices use their path.
-  const projectRoot = createMemo(() => {
-    const project = currentProject()
-    if (isWorkspaceDirectory(project, sdk().directory))
-      return (
-        data.location.info({ directory: sdk().directory })?.project.canonical ?? project?.worktree ?? sdk().directory
-      )
-    return sdk().directory
-  })
+  // The flag changes the default, not explicit checkout selection. A chosen module or managed
+  // worktree is a working directory in its own right; Local must not silently replace it.
+  const projectRoot = createMemo(() =>
+    directoryEditing()
+      ? sdk().directory
+      : (data.location.info({ directory: sdk().directory })?.project.canonical ??
+        currentProject()?.worktree ??
+        sdk().directory),
+  )
 
   createEffect(() => {
     void Promise.all([

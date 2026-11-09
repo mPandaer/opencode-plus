@@ -11,7 +11,12 @@ import { useDialog } from "@opencode/ui/context/dialog"
 import { useLanguage } from "@/runtime/i18n/language"
 import type { ServerCtx } from "@/runtime/server/runtime"
 import { useDirectoryPicker } from "@/workspaces/selection/picker"
-import { transitionDirectoryAdd, type DirectoryAddEvent, type DirectoryAddState } from "./directory-add-machine"
+import {
+  directoryAddView,
+  transitionDirectoryAdd,
+  type DirectoryAddEvent,
+  type DirectoryAddState,
+} from "./directory-add-machine"
 
 export function DirectoryAdd(props: {
   ctx: ServerCtx
@@ -79,21 +84,30 @@ export function DirectoryConfirm(props: {
 }) {
   const language = useLanguage()
   const dialog = useDialog()
-  const [state, setState] = createStore<{ value: DirectoryAddState }>({ value: { type: "ready" } })
-  const dispatch = (event: DirectoryAddEvent) =>
-    setState("value", reconcile(transitionDirectoryAdd(state.value, event)))
-  onCleanup(() => dispatch({ type: "close" }))
-  const saving = () => state.value.type === "saving"
+  const [state, setState] = createStore<{ value: DirectoryAddState }>({ value: { type: "ready", attempt: 0 } })
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const dispatch = (event: DirectoryAddEvent) => {
+    const next = transitionDirectoryAdd(state.value, event)
+    if (next === state.value) return false
+    clearTimeout(timer)
+    setState("value", reconcile(next))
+    return true
+  }
+  onCleanup(() => dispatch({ type: "disposed" }))
+  const view = () => directoryAddView(state.value)
   const outside = () => props.project && !isProjectDirectory(props.project, props.directory)
-  const save = async () => {
-    if (outside() || (state.value.type !== "ready" && state.value.type !== "failed")) return
-    dispatch({ type: "save" })
-    const project = await props.ctx.projects.add(props.directory)
-    if (!saving()) return
-    if (!project) return dispatch({ type: "failed" })
-    props.onAdd(props.directory)
-    dispatch({ type: "saved" })
-    dialog.close()
+  const save = () => {
+    if (outside() || !dispatch({ type: "save" })) return
+    const attempt = state.value.attempt
+    timer = setTimeout(() => dispatch({ type: "timed-out", attempt }), 30_000)
+    void props.ctx.projects.add(props.directory).then(
+      (project) => {
+        if (!dispatch({ type: project ? "saved" : "failed", attempt }) || !project) return
+        props.onAdd(props.directory)
+        dialog.close()
+      },
+      () => dispatch({ type: "failed", attempt }),
+    )
   }
   return (
     <Dialog fit>
@@ -105,15 +119,15 @@ export function DirectoryConfirm(props: {
         <Show when={outside()}>
           <p role="alert">{language.t("sidebar.directory.outsideProject")}</p>
         </Show>
-        <Show when={state.value.type === "failed"}>
+        <Show when={view().failed}>
           <p role="alert">{language.t("common.requestFailed")}</p>
         </Show>
       </DialogBody>
       <DialogFooter>
-        <Button variant="ghost" disabled={state.value.type === "saving"} onClick={() => dialog.close()}>
+        <Button variant="ghost" disabled={view().saving} onClick={() => dialog.close()}>
           {language.t("common.cancel")}
         </Button>
-        <Button disabled={state.value.type === "saving" || !!outside()} onClick={() => void save()}>
+        <Button disabled={view().saving || !!outside()} onClick={() => void save()}>
           {language.t(props.project ? "sidebar.directory.create" : "sidebar.directory.add")}
         </Button>
       </DialogFooter>

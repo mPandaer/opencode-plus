@@ -452,18 +452,28 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
 }
 
 // Answers every Location-scoped request for `directory` as the server does once that folder is deleted.
-export function mockMissingLocation(page: Page, directory: string) {
-  return page.route(
-    (url) => url.pathname.startsWith("/api/") && url.searchParams.get("location[directory]") === directory,
-    (route) =>
-      route.fulfill({
-        status: 404,
-        // SAFETY: the server's wire body for a missing Location, which the client decodes into its own error.
-        // oxlint-disable-next-line anti-slop-effect/no-manual-tagged-construction -- see SAFETY above
-        json: { _tag: "LocationNotFoundError", location: { directory }, message: `Location not found: ${directory}` },
-        headers: { "access-control-allow-origin": "*" },
-      }),
-  )
+export function mockMissingLocation(
+  page: Page,
+  directory: string,
+  missing = () => true,
+  endpoint = /\/api\//,
+  sessionID?: string,
+) {
+  return page.route(endpoint, (route) => {
+    const url = new URL(route.request().url())
+    if (
+      !missing() ||
+      (url.searchParams.get("location[directory]") !== directory && url.pathname !== `/api/session/${sessionID}/prompt`)
+    )
+      return route.fallback()
+    return route.fulfill({
+      status: 404,
+      // SAFETY: the server's wire body for a missing Location, which the client decodes into its own error.
+      // oxlint-disable-next-line anti-slop-effect/no-manual-tagged-construction -- see SAFETY above
+      json: { _tag: "LocationNotFoundError", location: { directory }, message: `Location not found: ${directory}` },
+      headers: { "access-control-allow-origin": "*" },
+    })
+  })
 }
 
 // Answers the first model list as a cold Location does when its plugins outlast the server's wait.

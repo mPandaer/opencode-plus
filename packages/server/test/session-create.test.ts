@@ -93,6 +93,8 @@ it.live(
       const diff = yield* request("/api/vcs/diff?mode=working", module)
       expect(diff.data).toEqual(expect.arrayContaining([expect.objectContaining({ file: "module-a/alpha-only.txt" })]))
     }).pipe(Effect.provideService(Flag.Overrides, "working_directories"), Effect.scoped),
+  // Real Git processes, three Location graphs, persisted Sessions, and filesystem/VCS requests exceed 5s on Windows.
+  { timeout: 15_000 },
 )
 
 const SessionResponse = Schema.Struct({ data: Schema.toEncoded(Session.Info) })

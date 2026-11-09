@@ -19,6 +19,7 @@ import { TitlebarTabStrip } from "@/shell/titlebar/tab-strip"
 import { macVerticalTrafficLights, SidebarToggle } from "@/shell/sidebar-toggle"
 import { SidebarInbox } from "@/shell/titlebar/inbox"
 import { SidebarOrganized } from "@/shell/titlebar/sidebar-organized"
+import { SidebarDirectories } from "@/shell/titlebar/sidebar-directories"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
 import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/shell/titlebar/session-events"
@@ -792,12 +793,21 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                               <Show
                                 when={settings.appearance.tabLayout() === "inbox"}
                                 fallback={
-                                  <Show
-                                    when={settings.general.sidebarOrganize() === "projects"}
-                                    fallback={verticalTabStrip()}
+                                  <SidebarDirectories
+                                    currentTab={currentTab()}
+                                    fallback={() => (
+                                      <Show
+                                        when={settings.general.sidebarOrganize() === "projects"}
+                                        fallback={verticalTabStrip()}
+                                      >
+                                        <SidebarOrganized currentTab={currentTab()}>
+                                          {verticalTabStrip}
+                                        </SidebarOrganized>
+                                      </Show>
+                                    )}
                                   >
-                                    <SidebarOrganized currentTab={currentTab()}>{verticalTabStrip}</SidebarOrganized>
-                                  </Show>
+                                    {verticalTabStrip}
+                                  </SidebarDirectories>
                                 }
                               >
                                 <SidebarInbox />

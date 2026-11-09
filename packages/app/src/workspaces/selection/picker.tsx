@@ -17,6 +17,8 @@ type DirectoryPickerInput = {
   location?: LocationRef
   title?: string
   multiple?: boolean
+  kind?: "server"
+  start?: string
   onSelect: (result: string | string[] | null) => void
 }
 
@@ -28,6 +30,7 @@ export function useDirectoryPicker() {
 
   return (input: DirectoryPickerInput) => {
     if (
+      input.kind !== "server" &&
       directoryPickerKind(platform.platform, input.server, servers.ownUrl()) === "native" &&
       platform.platform === "desktop"
     ) {

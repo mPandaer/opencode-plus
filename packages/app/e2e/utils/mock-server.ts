@@ -1476,7 +1476,12 @@ function location(config: MockServerConfig, directory = config.directory) {
 
   const root = listed ? (listed.canonical ?? listed.worktree) : undefined
 
-  if (listed && root) return { directory, project: { id: listed.id, directory: root, canonical: root } }
+  if (listed && root)
+    return {
+      directory,
+      experimental: { flags: config.flags ?? { working_directories: true } },
+      project: { id: listed.id, directory: root, canonical: root },
+    }
 
   return {
     directory,

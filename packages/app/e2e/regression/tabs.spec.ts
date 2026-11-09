@@ -10,6 +10,7 @@ import {
   holdRoute,
   pageMessagesFrom,
   project,
+  provider,
   seed,
   session,
   sessionHref,
@@ -36,6 +37,7 @@ test("recently closed shows ten sessions and searches older closures in close or
   }))
 
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "ClosedTabs",
     sessions,
     seed: {
@@ -92,6 +94,7 @@ test("recently closed keeps the keyboard-focused session in view when the menu o
   }))
 
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "ClosedOverflow",
     sessions,
     seed: {
@@ -127,6 +130,7 @@ test("recently closed fills remaining slots in Home order without open or duplic
   }))
 
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "OtherTabs",
     sessions: [
       ...sessions,
@@ -168,6 +172,7 @@ test("recently closed fills remaining slots in Home order without open or duplic
 
 test("tab strip keeps draft tabs as wide as session tabs and navigates on mouse down", async ({ page }) => {
   const workspace = await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "Tabs",
     sessions: [a, b],
     seed: { tabs: [a.id, { draft: "draft_tab_width", directory: "C:/OpenCode/Tabs" }, b.id] },
@@ -202,6 +207,7 @@ test("inactive session attention dots share the close control without marking th
   page,
 }) => {
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "Tabs",
     sessions: [a, b],
     sessionPermissions: {
@@ -265,7 +271,11 @@ test("inactive session attention dots share the close control without marking th
 })
 
 test("the browser title names the open session and resets after leaving it", async ({ page }) => {
-  await mockWorkspace(page, { name: "Tabs", sessions: [a, b] })
+  await mockWorkspace(page, {
+    flags: { working_directories: false },
+    name: "Tabs",
+    sessions: [a, b],
+  })
   await page.goto(sessionHref(a.id))
   await expect(page).toHaveTitle(`${a.title} · OpenCode`)
 
@@ -286,6 +296,7 @@ for (const [tabLayout, direction, label] of [
 ] as const) {
   test(`${tabLayout} ${direction} tab menus bulk close in visible order and reopen sessions`, async ({ page }) => {
     await mockWorkspace(page, {
+      flags: { working_directories: false },
       name: "Tabs",
       sessions: [a, b, c],
       seed: {
@@ -361,7 +372,12 @@ for (const [tabLayout, direction, label] of [
 
 for (const tabLayout of ["horizontal", "vertical"] as const) {
   test(`a ${tabLayout} tab can be renamed again while its previous rename is still saving`, async ({ page }) => {
-    await mockWorkspace(page, { name: "Tabs", sessions: [a, b], seed: { settings: { appearance: { tabLayout } } } })
+    await mockWorkspace(page, {
+      flags: { working_directories: false },
+      name: "Tabs",
+      sessions: [a, b],
+      seed: { settings: { appearance: { tabLayout } } },
+    })
     await page.goto(sessionHref(a.id))
     const title = page.locator(`[data-titlebar-tab-slot]:has(a[href="${sessionHref(a.id)}"]) [data-slot="tab-title"]`)
     const editor = page.locator('[data-slot="tab-title"][contenteditable="plaintext-only"]')
@@ -397,7 +413,11 @@ for (const tabLayout of ["horizontal", "vertical"] as const) {
 }
 
 test("a tab whose overlapping renames both fail shows its saved title again", async ({ page }) => {
-  await mockWorkspace(page, { name: "Tabs", sessions: [a, b] })
+  await mockWorkspace(page, {
+    flags: { working_directories: false },
+    name: "Tabs",
+    sessions: [a, b],
+  })
   await page.goto(sessionHref(a.id))
   const title = page.locator(`[data-titlebar-tab-slot]:has(a[href="${sessionHref(a.id)}"]) [data-slot="tab-title"]`)
   const editor = page.locator('[data-slot="tab-title"][contenteditable="plaintext-only"]')
@@ -428,7 +448,12 @@ test("a tab whose overlapping renames both fail shows its saved title again", as
 
 for (const tabLayout of ["horizontal", "vertical"] as const) {
   test(`a ${tabLayout} tab deletes its session after confirmation`, async ({ page }) => {
-    await mockWorkspace(page, { name: "Tabs", sessions: [a, b], seed: { settings: { appearance: { tabLayout } } } })
+    await mockWorkspace(page, {
+      flags: { working_directories: false },
+      name: "Tabs",
+      sessions: [a, b],
+      seed: { settings: { appearance: { tabLayout } } },
+    })
     await page.goto(sessionHref(a.id))
     const title = page.locator(`[data-titlebar-tab-slot]:has(a[href="${sessionHref(a.id)}"]) [data-slot="tab-title"]`)
 
@@ -458,7 +483,12 @@ for (const tabLayout of ["horizontal", "vertical"] as const) {
 test("keyboard navigation and numbered shortcuts follow the visible tab order and skip unresolved tabs", async ({
   page,
 }) => {
-  await mockWorkspace(page, { name: "Tabs", sessions: [a, c], seed: { tabs: [a.id, "ses_tab_unresolved", c.id] } })
+  await mockWorkspace(page, {
+    flags: { working_directories: false },
+    name: "Tabs",
+    sessions: [a, c],
+    seed: { tabs: [a.id, "ses_tab_unresolved", c.id] },
+  })
   await page.route(
     (url) => url.pathname === "/api/session/ses_tab_unresolved",
     () => new Promise(() => {}),
@@ -479,6 +509,7 @@ test("keyboard navigation and numbered shortcuts follow the visible tab order an
 
 test("option arrows move to the previous or next tab, and with shift to the next unread one", async ({ page }) => {
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "Tabs",
     sessions: [a, b, c],
     sessionPermissions: {
@@ -516,6 +547,7 @@ for (const navigation of ["horizontal", "vertical", "keyboard"] as const) {
 
     await context.grantPermissions(["clipboard-read", "clipboard-write"])
     await openSession(page, {
+      flags: { working_directories: false },
       name: "TabFocus",
       sessions: [a, b],
       seed: { settings: { appearance: { tabLayout } } },
@@ -555,6 +587,7 @@ for (const row of [
     test(`mobile drawer exposes close controls and navigates between tabs (${row.tabLayout})`, async ({ page }) => {
       await page.setViewportSize({ width: row.width, height: 720 })
       await mockWorkspace(page, {
+        flags: { working_directories: false },
         name: "Tabs",
         sessions: [a, b, c],
         sessionPermissions: {
@@ -620,6 +653,7 @@ test("icon-only inactive tabs retain their avatar and attention badge instead of
   page,
 }) => {
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "CompactTabs",
     sessions: [
       a,
@@ -658,6 +692,7 @@ test("an unread tab whose run failed shows the failed dot, as the inbox does", a
   const time = { created: T0, updated: T0, idle: T0 + 1 }
 
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "FailedTabs",
     sessions: [a, { ...b, outcome: "failed", time }, { ...c, outcome: "succeeded", time }],
   })
@@ -670,10 +705,187 @@ test("an unread tab whose run failed shows the failed dot, as the inbox does", a
   await expect(tab(c.id).locator('[data-mark="failed"]')).toBeHidden()
 })
 
+test("directory sidebar discovers exact historical directories beyond the Home page and saves the view", async ({
+  page,
+}) => {
+  const root = "C:/OpenCode/Modules"
+  await mockWorkspace(page, {
+    name: "Modules",
+    flags: { working_directories: true },
+    sessions: [
+      { id: "ses_root", title: "Root history" },
+      {
+        id: "ses_child",
+        title: "Module history",
+        directory: `${root}/api`,
+        time: { created: T0 - 1, updated: T0 - 1 },
+      },
+      ...Array.from({ length: 501 }, (_, index) => ({
+        id: `ses_recent_${index}`,
+        title: `Recent ${index}`,
+        time: { created: T0 + 1000 + index, updated: T0 + 1000 + index },
+      })),
+      { id: "ses_other", title: "Other api history", directory: "C:/OpenCode/Other/api" },
+      { id: "ses_plain", title: "Plain history", directory: "C:/Notes" },
+    ],
+    seed: { settings: { appearance: { tabLayout: "vertical" } }, tabs: ["ses_root"] },
+  })
+  await page.goto(sessionHref("ses_root"))
+  const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
+  const group = (directory: string) => sidebar.getByRole("group", { name: directory, exact: true })
+  await expect(group(`${root}/api`).getByText("Module history", { exact: true })).toBeVisible()
+  await expect(group(root).getByText("Module history", { exact: true })).toHaveCount(0)
+  await expect(group("C:/OpenCode/Other/api").getByText("Other api history", { exact: true })).toBeVisible()
+  await expect(group("C:/Notes").getByText("Plain history", { exact: true })).toBeVisible()
+  await group(`${root}/api`).getByText("Module history", { exact: true }).click()
+  await expectPath(page, sessionHref("ses_child"))
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Flat view", exact: true }).click()
+  await expect(sidebar.getByRole("group", { name: `${root}/api`, exact: true })).toHaveCount(0)
+  await page.reload()
+  await expect(sidebar.getByRole("button", { name: "Sidebar view", exact: true })).toBeVisible()
+  await expect(group(root)).toHaveCount(0)
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Directory view", exact: true }).click()
+  await expect(group(`${root}/api`).getByText("Module history", { exact: true })).toBeVisible()
+})
+
+test("directory sidebar adds an empty chosen subdirectory, confirms its full path and creates there", async ({
+  page,
+}) => {
+  const root = "C:/OpenCode/Picker"
+  const child = "C:\\OpenCode\\Picker\\empty"
+  const creates: unknown[] = []
+  await mockWorkspace(page, {
+    name: "Picker",
+    flags: { working_directories: true },
+    sessions: [{ id: "ses_picker", title: "Root history" }],
+    fileList: (path) => (path === root ? [fileNode(root, "empty", "directory")] : []),
+    onSessionCreate: (body) => {
+      creates.push(body)
+    },
+    seed: { settings: { appearance: { tabLayout: "vertical" } } },
+  })
+  await page.goto(sessionHref("ses_picker"))
+  const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
+  await sidebar.getByRole("button", { name: "Add directory", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Browse Picker", exact: true }).click()
+  const picker = page.getByRole("dialog", { name: "Add directory", exact: true })
+  await picker.getByRole("treeitem", { name: "empty", exact: true }).click()
+  await picker.getByRole("button", { name: "Select folder", exact: true }).click()
+  const confirm = page.getByRole("dialog", { name: "Confirm working directory", exact: true })
+  await expect(confirm.getByText(child, { exact: true })).toBeVisible()
+  await confirm.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(sidebar.getByRole("group", { name: child, exact: true })).toHaveCount(0)
+  await sidebar.getByRole("button", { name: "Add directory", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Browse Picker", exact: true }).click()
+  await picker.getByRole("treeitem", { name: "empty", exact: true }).click()
+  await picker.getByRole("button", { name: "Select folder", exact: true }).click()
+  await confirm.getByRole("button", { name: "Add directory", exact: true }).click()
+  const group = sidebar.getByRole("group", { name: child, exact: true })
+  await expect(group.getByText("No sessions yet", { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(group.getByText("No sessions yet", { exact: true })).toBeVisible()
+  await group.getByRole("button", { name: `New session in ${child}`, exact: true }).click()
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(child)
+  const editor = page.locator('[data-component="composer-editor"]')
+  await expect(editor).toBeEditable()
+  await editor.fill("Work in the empty module")
+  await page.locator('[data-action="composer-submit"]').click()
+  await expect.poll(() => creates).toEqual([expect.objectContaining({ location: { directory: child } })])
+})
+
+test("directory sidebar keeps entries and view isolated when switching servers", async ({ page }) => {
+  const localDirectory = "C:/Local"
+  const remoteDirectory = "/remote"
+  const local = session({ id: "ses_dir_local", title: "Local history", directory: localDirectory })
+  const remote = session({ id: "ses_dir_remote", title: "Remote history", directory: remoteDirectory })
+  await mockServers(page, {
+    [SERVER]: {
+      directory: localDirectory,
+      provider: provider(),
+      project: project({ id: "proj_local", directory: localDirectory }),
+      sessions: [local],
+      pageMessages: () => ({ items: [] }),
+    },
+    [REMOTE_SERVER]: {
+      directory: remoteDirectory,
+      provider: provider(),
+      project: project({ id: "proj_remote", directory: remoteDirectory }),
+      sessions: [remote],
+      pageMessages: () => ({ items: [] }),
+    },
+  })
+  await seed(page, {
+    servers: [REMOTE_SERVER],
+    tabs: [local.id, { session: remote.id, server: REMOTE_SERVER }],
+    settings: { appearance: { tabLayout: "vertical" } },
+  })
+  await page.goto(sessionHref(local.id))
+  const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
+  await expect(sidebar.getByRole("group", { name: localDirectory, exact: true })).toBeVisible()
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Flat view", exact: true }).click()
+  await sidebar.locator(`[data-titlebar-tab-link][href="${sessionHref(remote.id, REMOTE_SERVER)}"]`).click()
+  await expect(sidebar.getByRole("group", { name: remoteDirectory, exact: true })).toBeVisible()
+  await expect(sidebar.getByRole("group", { name: localDirectory, exact: true })).toHaveCount(0)
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Flat view", exact: true }).click()
+  await sidebar.locator(`[data-titlebar-tab-link][href="${sessionHref(local.id)}"]`).click()
+  await expect(sidebar.getByRole("group")).toHaveCount(0)
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Directory view", exact: true }).click()
+  await expect(sidebar.getByRole("group", { name: localDirectory, exact: true })).toBeVisible()
+  await expect(sidebar.getByRole("group", { name: remoteDirectory, exact: true })).toHaveCount(0)
+})
+
+test("directory sidebar chooses and retains an ordinary no-Git folder", async ({ page }) => {
+  await mockWorkspace(page, {
+    name: "Notes",
+    project: { vcs: undefined },
+    flags: { working_directories: true },
+    sessions: [],
+    fileList: () => [],
+    seed: { settings: { appearance: { tabLayout: "vertical" } }, tabs: [] },
+  })
+  await page.goto("/")
+  const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
+  await sidebar.getByRole("button", { name: "Add directory", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Choose folder…", exact: true }).click()
+  const picker = page.getByRole("dialog", { name: "Add directory", exact: true })
+  const input = picker.getByRole("combobox")
+  await expect(input).toBeEditable()
+  await input.fill("C:/Notes/empty")
+  await input.press("Enter")
+  await picker.getByRole("button", { name: "Select folder", exact: true }).click()
+  const confirm = page.getByRole("dialog", { name: "Confirm working directory", exact: true })
+  await expect(confirm.getByText("C:\\Notes\\empty", { exact: true })).toBeVisible()
+  await confirm.getByRole("button", { name: "Add directory", exact: true }).click()
+  const group = sidebar.getByRole("group", { name: "C:\\Notes\\empty", exact: true })
+  await expect(group.getByText("No sessions yet", { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(group.getByText("No sessions yet", { exact: true })).toBeVisible()
+})
+
+test("directory sidebar honors the effective disabled flag and keeps legacy flat tabs", async ({ page }) => {
+  await mockWorkspace(page, {
+    name: "DisabledDirectories",
+    flags: { working_directories: false },
+    sessions: [a, b],
+    seed: { settings: { appearance: { tabLayout: "vertical" } } },
+  })
+  await page.goto(sessionHref(a.id))
+  const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
+  await expect(sidebar.locator("[data-titlebar-tab-slot]")).toHaveCount(2)
+  await expect(sidebar.getByRole("button", { name: "Sidebar view", exact: true })).toHaveCount(0)
+  await expect(sidebar.getByRole("button", { name: "Add directory", exact: true })).toHaveCount(0)
+})
+
 test("vertical tabs resize, scroll, show shortcut hints, and navigate", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 480 })
   const directory = "C:/OpenCode/Tabs"
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "Tabs",
     sessions: [a, b],
     seed: {
@@ -794,6 +1006,7 @@ test.describe("vertical tabs on a touch desktop", () => {
     }
 
     await mockWorkspace(page, {
+      flags: { working_directories: false },
       name: "Tabs",
       sessions: [long],
       seed: { settings: { appearance: { tabLayout: "vertical" } } },
@@ -831,6 +1044,7 @@ for (const [screen, href] of [
 ] as const) {
   test(`collapsed vertical tabs sidebar reopens from the ${screen} screen`, async ({ page }) => {
     await mockWorkspace(page, {
+      flags: { working_directories: false },
       name: "Tabs",
       sessions: [a],
       seed: {
@@ -858,6 +1072,7 @@ test("the collapsed sidebar peeks from a resting toggle, Escape cancels a pendin
   page,
 }) => {
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "Tabs",
     sessions: [a],
     seed: { settings: { appearance: { tabLayout: "vertical", sidebarOpen: false } } },
@@ -897,6 +1112,7 @@ test("the collapsed sidebar peeks from a resting toggle, Escape cancels a pendin
 
 test("vertical tab gaps hover and select the nearest row", async ({ page }) => {
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "Tabs",
     sessions: [a, b, c],
     seed: { settings: { appearance: { tabLayout: "vertical" } } },
@@ -959,6 +1175,7 @@ test("vertical tab gaps hover and select the nearest row", async ({ page }) => {
 test("tab preview opens cold, switches immediately between tabs, and closes outside the strip", async ({ page }) => {
   const d = { id: "ses_tab_d", title: "Library" }
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "Tabs",
     sessions: [a, b, c, d],
     seed: { settings: { appearance: { tabLayout: "vertical" } } },
@@ -1145,6 +1362,7 @@ test("switching between busy sessions keeps the busy indicators and the activity
   ]
 
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "TabActivity",
     sessions: [a, b, ...children],
     sessionStatus: Object.fromEntries(children.map((child) => [child.id, { type: "running" as const }])),
@@ -1577,7 +1795,11 @@ test("⌘W in the side panel closes its last New tab with the panel, and only th
 
 // Windows has no native menu bar: the titlebar menu owns Paste, which only the desktop edit action can perform.
 test("the Windows titlebar menu pastes through the desktop edit action", async ({ page }) => {
-  await mockWorkspace(page, { name: "WindowsMenu", sessions: [] })
+  await mockWorkspace(page, {
+    flags: { working_directories: false },
+    name: "WindowsMenu",
+    sessions: [],
+  })
   await page.goto(`/e2e/utils/windows-menu.html?${new URLSearchParams({ server: SERVER })}`)
   await page.getByRole("button", { name: "OpenCode menu", exact: true }).click()
   await page.getByRole("menuitem", { name: "Edit", exact: true }).click()
@@ -1589,6 +1811,7 @@ test("the Windows titlebar menu pastes through the desktop edit action", async (
 
 test("the Windows menu shares the vertical sidebar's icon lane", async ({ page }) => {
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "WindowsMenu",
     sessions: [],
     seed: { settings: { appearance: { tabLayout: "vertical" } } },
@@ -1614,7 +1837,12 @@ for (const row of [
 ]) {
   test(`macOS traffic lights center on the header line with ${row.name}`, async ({ page }) => {
     await page.setViewportSize({ width: row.width, height: 720 })
-    await mockWorkspace(page, { name: "TrafficLights", sessions: [], seed: { settings: row.settings } })
+    await mockWorkspace(page, {
+      flags: { working_directories: false },
+      name: "TrafficLights",
+      sessions: [],
+      seed: { settings: row.settings },
+    })
     await page.goto(`/e2e/utils/windows-menu.html?${new URLSearchParams({ server: SERVER, os: "macos" })}`)
     await expect(page.getByRole("status", { name: "Traffic lights" })).toHaveText(JSON.stringify(row.position))
   })
@@ -1664,6 +1892,7 @@ test("loads a tab's transcript while the pointer rests on it, and not when it pa
   })
 
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "HoverPrefetch",
     sessions: [a, b, c],
     pageMessages: pageMessagesFrom(
@@ -1763,6 +1992,7 @@ test("opening a session from the inbox keeps the list's scroll position and rows
   }))
 
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "Inbox",
     sessions,
     vcs: { current: "dev", default: "dev" },
@@ -1803,6 +2033,7 @@ test("the inbox Archived dialog searches only archived sessions and restores the
 }) => {
   await page.clock.install({ time: T0 + 41 * 60_000 })
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "ArchivedInbox",
     sessions: [
       { id: "ses_archive_active", title: "Active inbox session", time: { created: T0, updated: T0, idle: T0 } },
@@ -1869,6 +2100,7 @@ test("deleting from the inbox closes its dialog at once and a slow delete leaves
   page,
 }) => {
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "DeleteInbox",
     sessions: [
       { id: "ses_delete_kept", title: "Kept inbox session", time: { created: T0, updated: T0, idle: T0, viewed: T0 } },
@@ -1947,6 +2179,7 @@ test("sessions opened from Home and Search get a temporary Current session row w
   page,
 }) => {
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "CurrentInbox",
     sessions: [
       { id: "ses_current_home", title: "Older Home session", time: { created: T0, updated: T0, idle: T0, viewed: T0 } },
@@ -2011,6 +2244,7 @@ test("the inbox keeps every unread result separate from expandable Recent, inclu
   page,
 }) => {
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "InboxSections",
     sessions: [
       ...Array.from({ length: 12 }, (_, index) => ({
@@ -2069,6 +2303,7 @@ test("the inbox waits for initial requests and orders attention by waiting age r
   await page.clock.install({ time: T0 + 10 * 60_000 })
 
   const workspace = await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "InboxWaiting",
     sessions: [
       {
@@ -2189,6 +2424,7 @@ async function mockGaveUpPermission(page: Page, tabLayout: "horizontal" | "inbox
   const attempts = { count: 0 }
 
   await mockWorkspace(page, {
+    flags: { working_directories: false },
     name: "GaveUp",
     sessions: [a, b],
     sessionPermissions: {

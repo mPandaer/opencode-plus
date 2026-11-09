@@ -210,6 +210,7 @@ export function createNewSessionComposerAdapter(props: {
                     () => {
                       // The attempt ended first, so the prompt was never sent and the Session is still empty.
                       if (ended.signal.aborted) void data.session.remove(effect.sessionID).catch(() => undefined)
+                      if (!ended.signal.aborted) server.ctx.directories.reveal(effect.sessionID)
 
                       return { type: "session.created", attempt } as const
                     },

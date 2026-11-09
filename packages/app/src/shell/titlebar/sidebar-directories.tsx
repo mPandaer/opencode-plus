@@ -1,4 +1,3 @@
-import { Schema } from "effect"
 import { batch, createEffect, createMemo, For, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js"
 import { Key } from "@solid-primitives/keyed"
 import { createStore } from "solid-js/store"
@@ -12,8 +11,6 @@ import { TextField } from "@opencode/ui/text-field"
 import { MenuScroll } from "@opencode/ui/menu-scroll"
 import type { SessionInfo } from "@opencode/client/promise"
 import { useLanguage } from "@/runtime/i18n/language"
-import { Persistence } from "@/runtime/persistence/schema"
-import { Persist, persisted } from "@/runtime/persistence/storage"
 import { ServerConnection, useServers } from "@/runtime/server/registry"
 import { useServerCtx, type ServerCtx } from "@/runtime/server/runtime"
 import { useLayout } from "@/shell/state/layout"
@@ -24,12 +21,6 @@ import { pathKey } from "@/workspaces/path-key"
 import { ProjectSessionRow } from "./project-session-row"
 import { DirectoryAdd } from "./directory-add"
 import { createSidebarSessionActivity, mergeSidebarSessions } from "./sidebar-sessions"
-
-const DirectoryState = Persistence.struct({
-  directories: Schema.mutable(Schema.Array(Schema.String)),
-  closed: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
-  view: Persistence.optional(Schema.Literals(["directories", "projects", "list"])),
-})
 
 export function SidebarDirectories(props: {
   currentTab: Tab | undefined
@@ -78,13 +69,9 @@ function DirectorySidebar(props: {
     projects: [] as string[],
     directories: [] as string[],
   })
-  const [state, setState, , ready] = persisted(
-    Persist.serverGlobal(props.ctx.sdk.scope, "sidebar.directories"),
-    DirectoryState,
-    {
-      directories: [],
-    },
-  )
+  const state = props.ctx.directories.state
+  const setState = props.ctx.directories.set
+  const ready = props.ctx.directories.ready
 
   // One coherent, location-scoped policy for the server sidebar: its default Location, not the active tab's
   // project config. The server owns channel/env/config precedence; the browser never resolves flags itself.
@@ -178,6 +165,38 @@ function DirectorySidebar(props: {
       ),
   )
   const clearFilters = () => setLocal({ search: "", projects: [], directories: [] })
+  createEffect(() => {
+    const id = props.ctx.directories.revealed()
+    if (!id || !enabled() || !ready()) return
+    const session = props.ctx.data.session.get(id)
+    if (!session) return
+    const directory = session.location.directory
+    if (!state.directories.some((item) => pathKey(item) === pathKey(directory))) {
+      untrack(() => props.ctx.directories.add(directory))
+      return
+    }
+    const project = projects().find((project) =>
+      project.directories.some((item) => pathKey(item) === pathKey(directory)),
+    )
+    if (!project) return
+    untrack(() =>
+      batch(() => {
+        if (!matches(directory, project.name, session.title)) setLocal("search", "")
+        if (!owns(project.key, directory)) setLocal({ projects: [], directories: [] })
+        setLocal(
+          "limits",
+          pathKey(directory),
+          Math.max(
+            local.limits[pathKey(directory)] ?? 5,
+            (grouped().get(pathKey(directory)) ?? []).findIndex((item) => item.id === id) + 1,
+          ),
+        )
+        setState("collapsed", (items) => (items ?? []).filter((item) => item !== pathKey(directory)))
+        setState("collapsedProjects", (items) => (items ?? []).filter((item) => item !== project.key))
+        props.ctx.directories.revealedDone()
+      }),
+    )
+  })
 
   onCleanup(props.ctx.data.listen(({ details }) => activity.update(server, details)))
   createEffect(() => {
@@ -193,13 +212,7 @@ function DirectorySidebar(props: {
     if (added.length) untrack(() => setState("directories", (items) => [...items, ...added]))
   })
 
-  const addDirectory = (directory: string) => {
-    batch(() => {
-      setState("closed", (items) => (items ?? []).filter((item) => pathKey(item) !== pathKey(directory)))
-      if (!state.directories.some((item) => pathKey(item) === pathKey(directory)))
-        setState("directories", (items) => [...items, directory])
-    })
-  }
+  const addDirectory = props.ctx.directories.add
   const directoryRow = (directory: string) => (
     <div role="group" aria-label={directory} class="mb-2 flex min-w-0 flex-col gap-[3px]">
       <div class="flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1 text-13-medium text-v2-text-text-muted">
@@ -395,7 +408,11 @@ function DirectorySidebar(props: {
             </Show>
             <Show
               when={state.view === "projects"}
-              fallback={<For each={filtered().flatMap((project) => project.directories)}>{directoryRow}</For>}
+              fallback={
+                <For each={state.directories.filter((directory) => visibleSessions().has(pathKey(directory)))}>
+                  {directoryRow}
+                </For>
+              }
             >
               <For each={filtered()}>
                 {(project) => (

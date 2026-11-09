@@ -23,6 +23,9 @@ export default function NewSessionPage(props: { draftId: string }) {
   )
 
   const workspace = createNewSessionWorkspaceController({
+    setDirectory: (directory) => {
+      if (search.draftId) tabs.updateDraft(search.draftId, { directory })
+    },
     selectedWorktree: () => draftTab()?.worktree,
     selectedBranch: () => draftTab()?.branch,
     setSelectedWorktree: (worktree) => {

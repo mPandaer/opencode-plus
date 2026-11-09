@@ -1,7 +1,8 @@
 import { Location } from "@opencode/core/location"
+import { Flag } from "@opencode/core/flag"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { ServiceUnavailableError } from "@opencode/protocol/errors"
-import { Cause, Effect } from "effect"
+import { Cause, Effect, Record } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
 import { Api } from "../api"
 
@@ -16,6 +17,7 @@ export const LocationHandler = HttpApiBuilder.group(Api, "server.location", (han
           return new Location.Info({
             directory: location.directory,
             project: location.project,
+            experimental: { flags: Record.map(yield* Flag.all, (flag) => flag.enabled) },
           })
         }),
       )

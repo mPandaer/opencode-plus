@@ -394,6 +394,7 @@ export type WorktreeInfo = { directory: AbsolutePath }
 
 export type LocationPublicInfo = {
   directory: AbsolutePath
+  experimental?: { flags: { [x: string]: boolean } }
   project: { id: ProjectID; directory: AbsolutePath; canonical: AbsolutePath }
 }
 
@@ -2546,6 +2547,7 @@ export type ConfigEntry =
         experimental?: {
           portable_shell_scanner?: boolean
           all_flags?: boolean
+          working_directories?: boolean
           todo?: boolean
           background_compaction?: boolean
           media_blob?: boolean

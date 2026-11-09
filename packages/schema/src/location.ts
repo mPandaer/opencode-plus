@@ -19,6 +19,11 @@ export interface PublicRef extends Schema.Schema.Type<typeof PublicRef> {}
 export class Info extends Schema.Class<Info>("Location.Info")({
   directory: AbsolutePath,
   workspaceID: optional(WorkspaceID),
+  experimental: optional(
+    Schema.Struct({
+      flags: Schema.Record(Schema.String, Schema.Boolean),
+    }),
+  ),
   project: Schema.Struct({
     id: ProjectID,
     directory: AbsolutePath,

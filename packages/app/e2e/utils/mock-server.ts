@@ -70,6 +70,7 @@ export interface MockServerConfig {
   // Without it, writes answer 501 MockUnsupported.
   onFileWrite?: (input: { path: string; directory: string; body: string }) => void
   configEntries?: unknown[]
+  flags?: Record<string, boolean>
   directory: string
   project: unknown
   // Replaces the `/api/project` inventory, which defaults to `[project]`. A location inside a listed project
@@ -1479,7 +1480,12 @@ function location(config: MockServerConfig, directory = config.directory) {
 
   return {
     directory,
-    project: { id: projectSeed(config)?.id, directory: config.directory, canonical: config.directory },
+    experimental: { flags: config.flags ?? { working_directories: true } },
+    project: {
+      id: projectSeed(config)?.id,
+      directory: projectSeed(config)?.canonical ?? projectSeed(config)?.worktree ?? config.directory,
+      canonical: projectSeed(config)?.canonical ?? projectSeed(config)?.worktree ?? config.directory,
+    },
   }
 }
 

@@ -92,6 +92,56 @@ test("the location shortcuts choose worktrees from every state and keep cycling"
   await expect(view.editor).toBeFocused()
 })
 
+test("Local preserves a selected subdirectory and lets the user change it before submitting", async ({ page }) => {
+  const root = "C:/OpenCode/Modules"
+  const created: unknown[] = []
+  const view = await openDraft(page, {
+    name: "Modules",
+    directory: `${root}/module-a`,
+    project: { worktree: root, canonical: root },
+    fileList: () => [],
+    onSessionCreate: (body) => void created.push(body.location),
+  })
+
+  const path = page.locator('[data-slot="new-session-location-path"]')
+  await expect(path).toHaveText(`${root}/module-a`)
+  await page.getByRole("button", { name: "Change working directory", exact: true }).click()
+  const picker = page.getByRole("dialog")
+  const input = picker.getByRole("combobox")
+  await expect(input).toBeEditable()
+  await input.fill(`${root}/module-b`)
+  await input.press("Enter")
+  await picker.getByRole("button", { name: "Select folder", exact: true }).click()
+  await expect(path).toHaveText(/C:[\\/]OpenCode[\\/]Modules[\\/]module-b/)
+  await view.editor.fill("Work in module B")
+  await submit(page).click()
+  await expect
+    .poll(() => created)
+    .toEqual([{ directory: expect.stringMatching(/C:[\\/]OpenCode[\\/]Modules[\\/]module-b/) }])
+})
+
+test("an explicit checkout selection leaves the module while the directory editor honors its flag", async ({
+  page,
+}) => {
+  const root = "C:/OpenCode/CheckoutSelection"
+  const created: unknown[] = []
+  const view = await openDraft(page, {
+    name: "CheckoutSelection",
+    directory: `${root}/module-a`,
+    project: { worktree: root, canonical: root },
+    flags: { working_directories: false },
+    worktrees: () => [{ directory: root }],
+    onSessionCreate: (body) => void created.push(body.location),
+  })
+  await expect(page.getByRole("button", { name: "Change working directory", exact: true })).toHaveCount(0)
+  await newSessionWorktree(page).click()
+  await page.getByRole("option", { name: /CheckoutSelection C:\/OpenCode\/CheckoutSelection$/ }).click()
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(root)
+  await view.editor.fill("Use the checkout explicitly")
+  await submit(page).click()
+  await expect.poll(() => created).toEqual([{ directory: root }])
+})
+
 test("Local shows and targets the main checkout when the draft opened in a worktree", async ({ page }) => {
   const root = "C:/OpenCode/LocalFromWorktree"
 

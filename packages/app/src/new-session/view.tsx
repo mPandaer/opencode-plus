@@ -122,6 +122,7 @@ export function NewSessionView(props: {
                       project={project()}
                       workspace={props.workspace.bar.visible() ? props.workspace.selection.value() : "main"}
                       root={props.workspace.project.root()}
+                      onDirectory={props.workspace.bar.directoryEditing() ? props.project.changeDirectory : undefined}
                       branch={<NewSessionBranch workspace={props.workspace} onDone={props.composer.restoreFocus} />}
                       onboarding={onboardingReady() && !onboarding.used && props.workspace.bar.visible()}
                       onClick={() => location()}
@@ -280,6 +281,7 @@ function NewSessionLocation(props: {
   /** "main", "create", or a worktree directory. */
   workspace: string
   root: string
+  onDirectory?: () => void
   branch?: JSX.Element
   onboarding: boolean
   onClick: () => void
@@ -420,7 +422,7 @@ function NewSessionLocation(props: {
       <Show when={path()} keyed>
         {(directory) => (
           <div
-            class="flex min-w-0 flex-1 justify-end pe-1.5 @max-[560px]:hidden"
+            class="flex min-w-0 flex-1 justify-end pe-1.5"
             style={{ "min-width": `min(50%, ${Math.ceil(fitted().minimum) + 6}px)` }}
           >
             <Tooltip
@@ -455,6 +457,17 @@ function NewSessionLocation(props: {
                 </span>
               </span>
             </Tooltip>
+            <Show when={props.onDirectory}>
+              <button
+                type="button"
+                aria-label={language.t("session.new.directory.change")}
+                title={directory}
+                class={`${TRIGGER} shrink-0`}
+                onClick={props.onDirectory}
+              >
+                <Icon name="folder" size="small" />
+              </button>
+            </Show>
           </div>
         )}
       </Show>

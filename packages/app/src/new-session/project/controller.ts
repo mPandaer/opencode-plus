@@ -48,8 +48,7 @@ export function createComposerProjectControls(props: { draftId: string; worktree
   const ready = createMemo(() =>
     servers.list.filter(
       (connection) =>
-        !!ServerConnection.http(connection) &&
-        !isServerFailed(global.servers.health[ServerConnection.key(connection)]),
+        !!ServerConnection.http(connection) && !isServerFailed(global.servers.health[ServerConnection.key(connection)]),
     ),
   )
 
@@ -79,6 +78,19 @@ export function createComposerProjectControls(props: { draftId: string; worktree
     })
   }
 
+  const changeDirectory = () => {
+    pickDirectory({
+      server: projectServer(),
+      location: location().ref,
+      onSelect: (result) => {
+        const directory = Array.isArray(result) ? result[0] : result
+        if (!directory) return
+        void projectServerCtx.projects.add(directory)
+        selectProject(directory, undefined, "main")
+      },
+    })
+  }
+
   const addProject = (title: string, serverKey?: string) => {
     const connection = serverKey
       ? servers.list.find((connection) => ServerConnection.key(connection) === serverKey)
@@ -94,7 +106,7 @@ export function createComposerProjectControls(props: { draftId: string; worktree
 
         if (!directory) return
         void global.serverCtx(ServerConnection.key(connection))?.projects.add(directory)
-        selectProject(directory, serverKey)
+        selectProject(directory, serverKey, "main")
       },
     })
   }
@@ -107,5 +119,6 @@ export function createComposerProjectControls(props: { draftId: string; worktree
     server: servers.list.length > 1 ? ServerConnection.key(projectServer()) : undefined,
     select: selectProject,
     add: addProject,
+    changeDirectory,
   }))
 }

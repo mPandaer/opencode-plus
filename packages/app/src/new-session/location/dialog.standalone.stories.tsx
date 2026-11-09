@@ -77,6 +77,7 @@ function LocationDialogStory(props: { multipleServers?: boolean }) {
   })
 
   const workspace = createNewSessionWorkspaceController({
+    setDirectory: (directory) => setStore("directory", directory),
     selectedWorktree: () => store.worktree,
     selectedBranch: () => store.branch,
     setSelectedWorktree: (worktree) => setStore("worktree", worktree),

@@ -1036,6 +1036,7 @@ test("directory groups drag in shared order and keep folded layouts after activi
   await workspace.push([
     {
       id: "evt_order_activity",
+      durable: { aggregateID: "ses_order_old", seq: 1, version: 1 },
       type: "session.renamed",
       created: T0 + 100,
       data: { sessionID: "ses_order_old", title: "API older" },

@@ -222,6 +222,7 @@ export function createNewSessionComposerAdapter(props: {
 
             if (effect.type === "session.promote") {
               const cleanupReady = startTransition(() => {
+                server.ctx.workingDirectory.remember(effect.directory)
                 local.session.promote(effect.directory, effect.sessionID, {
                   agent: selection.agent,
                   model: selection.model,

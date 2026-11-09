@@ -180,7 +180,7 @@ export function createNewSessionWorkspaceController(input: {
       return (
         data.location.info({ directory: sdk().directory })?.project.canonical ?? project?.worktree ?? sdk().directory
       )
-    return data.location.info({ directory: sdk().directory })?.project.canonical ?? sdk().directory
+    return sdk().directory
   })
 
   createEffect(() => {

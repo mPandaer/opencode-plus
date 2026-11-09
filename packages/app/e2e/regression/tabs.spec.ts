@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page, type Locator } from "@playwright/test"
 import type { OpenCodeEvent, SessionMessageInfo } from "@opencode/client/promise"
 import {
   NO_PROVIDER,
@@ -931,6 +931,115 @@ test("filtered sidebar creates in current then explicit directories and reveals 
   await sidebar.getByRole("button", { name: "Filter ownership", exact: true }).click()
   await expect(page.getByRole("menuitemcheckbox", { name: `Directory: ${payments}`, exact: true })).toBeChecked()
   await page.keyboard.press("Escape")
+})
+
+test("directory groups drag in shared order and keep folded layouts after activity and reload", async ({ page }) => {
+  const root = "C:/OpenCode/Ordered"
+  const workspace = await mockWorkspace(page, {
+    name: "Ordered",
+    projects: [
+      project({ id: "proj_ordered", directory: root, name: "Ordered" }),
+      project({ id: "proj_other_order", directory: "C:/OtherOrder", name: "Other order" }),
+    ],
+    sessions: [
+      { id: "ses_order_api", title: "API recent", directory: `${root}/api`, time: { created: T0, updated: T0 + 30 } },
+      { id: "ses_order_web", title: "Web work", directory: `${root}/web`, time: { created: T0, updated: T0 + 20 } },
+      { id: "ses_order_old", title: "API older", directory: `${root}/api`, time: { created: T0, updated: T0 + 10 } },
+      { id: "ses_order_other", title: "Other work", directory: "C:/OtherOrder", projectID: "proj_other_order" },
+    ],
+    seed: { settings: { appearance: { tabLayout: "vertical" } }, tabs: ["ses_order_api"] },
+  })
+  await page.goto(sessionHref("ses_order_api"))
+  const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
+  const group = (directory: string) => sidebar.getByRole("group", { name: directory, exact: true })
+  await expect(group(`${root}/api`).getByText("API older", { exact: true })).toBeVisible()
+  const drag = async (handle: Locator, target: Locator) => {
+    await expect(handle).toBeVisible()
+    await expect(target).toBeVisible()
+    const source = await handle.boundingBox()
+    const destination = await target.boundingBox()
+    if (!source || !destination) throw new Error("Group drag target is not rendered")
+    await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2 + 6, { steps: 3 })
+    await page.mouse.move(destination.x + 12, destination.y + destination.height / 2, { steps: 20 })
+    await page.mouse.up()
+  }
+  await drag(
+    group(`${root}/api`).getByRole("button", { name: `Reorder directory ${root}/api`, exact: true }),
+    group(`${root}/web`).getByRole("button", { name: `Reorder directory ${root}/web`, exact: true }),
+  )
+  await expect
+    .poll(() =>
+      sidebar
+        .getByRole("group")
+        .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
+    )
+    .toEqual([`${root}/web`, `${root}/api`, "C:/OtherOrder"])
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Project view", exact: true }).click()
+  const ordered = sidebar.getByRole("group", { name: "Project: Ordered", exact: true })
+  const other = sidebar.getByRole("group", { name: "Project: Other order", exact: true })
+  await expect
+    .poll(() =>
+      ordered
+        .getByRole("group")
+        .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
+    )
+    .toEqual([`${root}/web`, `${root}/api`])
+  await drag(
+    other.getByRole("button", { name: "Reorder project Other order", exact: true }),
+    ordered.getByRole("button", { name: "Fold project Ordered", exact: true }),
+  )
+  await expect
+    .poll(() =>
+      sidebar
+        .getByRole("group", { name: /^Project:/ })
+        .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
+    )
+    .toEqual(["Project: Other order", "Project: Ordered"])
+  await group(`${root}/web`)
+    .getByRole("button", { name: `Fold directory ${root}/web`, exact: true })
+    .click()
+  await ordered.getByRole("button", { name: "Fold project Ordered", exact: true }).click()
+  await page.reload()
+  await expect(ordered.getByRole("button", { name: "Fold project Ordered", exact: true })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  )
+  await ordered.getByRole("button", { name: "Fold project Ordered", exact: true }).click()
+  await expect(group(`${root}/web`).getByText("Web work", { exact: true })).toHaveCount(0)
+  await expect
+    .poll(() =>
+      sidebar
+        .getByRole("group", { name: /^Project:/ })
+        .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
+    )
+    .toEqual(["Project: Other order", "Project: Ordered"])
+  await workspace.push([
+    {
+      id: "evt_order_activity",
+      type: "session.renamed",
+      created: T0 + 100,
+      data: { sessionID: "ses_order_old", title: "API older" },
+    },
+  ])
+  await expect(group(`${root}/api`).getByRole("button", { name: /API (older|recent)/ })).toHaveText([
+    /API older/,
+    /API recent/,
+  ])
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Directory view", exact: true }).click()
+  await expect
+    .poll(() =>
+      sidebar
+        .getByRole("group")
+        .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
+    )
+    .toEqual([`${root}/web`, `${root}/api`, "C:/OtherOrder"])
+  await expect(
+    group(`${root}/web`).getByRole("button", { name: `Fold directory ${root}/web`, exact: true }),
+  ).toHaveAttribute("aria-expanded", "false")
 })
 
 test("project new session requires a directory choice and submits the selected exact path", async ({ page }) => {

@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { createEffect, createMemo, For, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js"
+import { batch, createEffect, createMemo, For, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js"
 import { Key } from "@solid-primitives/keyed"
 import { DragDropProvider, PointerSensor } from "@dnd-kit/solid"
 import { isSortable, useSortable } from "@dnd-kit/solid/sortable"
@@ -34,6 +34,7 @@ const DirectoryState = Persistence.struct({
   projectOrder: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
   collapsed: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
   collapsedProjects: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
+  closed: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
   view: Persistence.optional(Schema.Literals(["directories", "projects", "list"])),
 })
 
@@ -178,7 +179,8 @@ function DirectorySidebar(props: {
   onCleanup(props.ctx.data.listen(({ details }) => activity.update(server, details)))
   createEffect(() => {
     if (!ready() || !enabled()) return
-    const known = new Set(state.directories.map(pathKey))
+    // Closing is an explicit preference, so historical discovery must never resurrect it.
+    const known = new Set([...state.directories, ...(state.closed ?? [])].map(pathKey))
     const added = sessions().flatMap((session) => {
       const directory = session.location.directory
       if (known.has(pathKey(directory))) return []
@@ -189,8 +191,11 @@ function DirectorySidebar(props: {
   })
 
   const addDirectory = (directory: string) => {
-    if (!state.directories.some((item) => pathKey(item) === pathKey(directory)))
-      setState("directories", (items) => [...items, directory])
+    batch(() => {
+      setState("closed", (items) => (items ?? []).filter((item) => pathKey(item) !== pathKey(directory)))
+      if (!state.directories.some((item) => pathKey(item) === pathKey(directory)))
+        setState("directories", (items) => [...items, directory])
+    })
   }
   const directoryRow = (directory: string, index: Accessor<number>) => (
     <SortableGroup
@@ -230,6 +235,34 @@ function DirectorySidebar(props: {
                 aria-label={language.t("sidebar.directory.new", { directory })}
                 onClick={() => void tabs.newDraft({ server, directory, worktree: "main" })}
               />
+              <Menu placement="bottom-end">
+                <Menu.Trigger
+                  as={IconButton}
+                  icon={<Icon name="dot-grid" />}
+                  variant="ghost-muted"
+                  size="small"
+                  aria-label={language.t("sidebar.directory.actions")}
+                />
+                <Menu.Portal>
+                  <Menu.Content>
+                    <div class="max-w-56 px-2 py-1 text-12-regular text-v2-text-text-muted">
+                      {language.t("sidebar.directory.kept")}
+                    </div>
+                    <Menu.Item
+                      onSelect={() =>
+                        batch(() => {
+                          setState("closed", (items) => [...(items ?? []), directory])
+                          setState("directories", (items) =>
+                            items.filter((item) => pathKey(item) !== pathKey(directory)),
+                          )
+                        })
+                      }
+                    >
+                      {language.t("sidebar.directory.close")}
+                    </Menu.Item>
+                  </Menu.Content>
+                </Menu.Portal>
+              </Menu>
             </div>
             <Show when={!state.collapsed?.includes(pathKey(directory))}>
               <For

@@ -295,6 +295,7 @@ const layer = Layer.effect(
               executeTool: prepared.executeTool,
             })),
           )
+        yield* checkDirectory
         const outcome = yield* steps.attempt({
           isLocationClosed: lifecycle.isClosed,
           sessionID,

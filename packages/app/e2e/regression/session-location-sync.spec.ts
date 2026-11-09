@@ -76,6 +76,7 @@ test("replaces the composer when the location is not found and recovers by movin
   const moves: unknown[] = []
   const transport = await installSseTransport(page, { server: fixture.serverKey })
   await mockOpenCodeServer(page, {
+    flags: { working_directories: false },
     directory: fixture.directory,
     project: fixture.project,
     provider: fixture.provider,
@@ -234,7 +235,7 @@ test("choosing a new location adds a directory without moving the unavailable se
   await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveCount(0)
   expect(session.directory).toBe(directory)
   expect(moves).toEqual([])
-  await expect.poll(() => page.evaluate(() => localStorage.getItem("sidebar.directories"))).toContain(destination)
+  await expect.poll(() => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.includes("sidebar.directories")).map(([, value]) => value).join(""))).toContain("SmokeProject")
 })
 
 test("follows a live session move while the agent catalog is still loading", async ({ page }) => {

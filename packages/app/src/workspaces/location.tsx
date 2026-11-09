@@ -61,9 +61,8 @@ const context = createSimpleContext({
 
       timer = setTimeout(() => dispatch({ type: "sync.timed-out", attempt: effect.attempt }), effect.timeout)
       // Resolve freshly: a warm client or server Location does not prove its folder still exists.
-      void serverSDK.api.location
-        .get({ location: effect.location })
-        .then(() => data.location.syncInfo(effect.location))
+      data.location.invalidate(effect.location)
+      void data.location.syncInfo(effect.location)
         .then(() => {
           dispatch({ type: "info.resolved", attempt: effect.attempt })
 

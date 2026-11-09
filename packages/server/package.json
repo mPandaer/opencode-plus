@@ -37,12 +37,13 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@opencode/pty": "0.4.0",
     "@opencode/client": "workspace:*",
     "@opencode/plugin": "workspace:*",
+    "@opencode/pty": "0.4.0",
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
     "@typescript/native": "catalog:",
+    "@vscode/ripgrep": "1.18.0",
     "fast-check": "catalog:"
   }
 }

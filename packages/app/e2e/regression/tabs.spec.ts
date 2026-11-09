@@ -946,11 +946,19 @@ test("directory groups drag in shared order and keep folded layouts after activi
     projects: [
       project({ id: "proj_ordered", directory: root, name: "Ordered" }),
       project({ id: "proj_other_order", directory: "C:/OtherOrder", name: "Other order" }),
+      project({ id: "proj_hidden_order", directory: "C:/Quiet", name: "Hidden" }),
     ],
     sessions: [
       { id: "ses_order_api", title: "API recent", directory: `${root}/api`, time: { created: T0, updated: T0 + 30 } },
       { id: "ses_order_web", title: "Web work", directory: `${root}/web`, time: { created: T0, updated: T0 + 20 } },
       { id: "ses_order_old", title: "API older", directory: `${root}/api`, time: { created: T0, updated: T0 + 10 } },
+      {
+        id: "ses_order_hidden",
+        title: "Hidden work",
+        directory: "C:/Quiet",
+        projectID: "proj_hidden_order",
+        time: { created: T0, updated: T0 + 5 },
+      },
       { id: "ses_order_other", title: "Other work", directory: "C:/OtherOrder", projectID: "proj_other_order" },
     ],
     seed: { settings: { appearance: { tabLayout: "vertical" } }, tabs: ["ses_order_api"] },
@@ -970,7 +978,7 @@ test("directory groups drag in shared order and keep folded layouts after activi
         .getByRole("group", { name: /.+/ })
         .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
     )
-    .toEqual([`${root}/web`, `${root}/api`, "C:/OtherOrder"])
+    .toEqual([`${root}/web`, `${root}/api`, "C:/Quiet", "C:/OtherOrder"])
   await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
   await page.getByRole("menuitem", { name: "Project view", exact: true }).click()
   const ordered = sidebar.getByRole("group", { name: "Project: Ordered", exact: true })
@@ -978,10 +986,12 @@ test("directory groups drag in shared order and keep folded layouts after activi
   await expect
     .poll(() =>
       ordered
-        .getByRole("group")
+        .getByRole("group", { name: /.+/ })
         .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
     )
     .toEqual([`${root}/web`, `${root}/api`])
+  await sidebar.getByRole("searchbox", { name: "Search sessions and groups", exact: true }).fill("order")
+  await expect(sidebar.getByRole("group", { name: "Project: Hidden", exact: true })).toHaveCount(0)
   await dragSidebarGroup(
     page,
     other.getByRole("button", { name: "Reorder project Other order", exact: true }),
@@ -994,6 +1004,14 @@ test("directory groups drag in shared order and keep folded layouts after activi
         .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
     )
     .toEqual(["Project: Other order", "Project: Ordered"])
+  await sidebar.getByRole("button", { name: "Clear filters", exact: true }).click()
+  await expect
+    .poll(() =>
+      sidebar
+        .getByRole("group", { name: /^Project:/ })
+        .evaluateAll((items) => items.map((item) => item.getAttribute("aria-label"))),
+    )
+    .toEqual(["Project: Other order", "Project: Hidden", "Project: Ordered"])
   await group(`${root}/web`)
     .getByRole("button", { name: `Fold directory ${root}/web`, exact: true })
     .click()
@@ -1011,7 +1029,7 @@ test("directory groups drag in shared order and keep folded layouts after activi
         .getByRole("group", { name: /^Project:/ })
         .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
     )
-    .toEqual(["Project: Other order", "Project: Ordered"])
+    .toEqual(["Project: Other order", "Project: Hidden", "Project: Ordered"])
   await workspace.push([
     {
       id: "evt_order_activity",
@@ -1032,7 +1050,7 @@ test("directory groups drag in shared order and keep folded layouts after activi
         .getByRole("group", { name: /.+/ })
         .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
     )
-    .toEqual([`${root}/web`, `${root}/api`, "C:/OtherOrder"])
+    .toEqual([`${root}/web`, `${root}/api`, "C:/Quiet", "C:/OtherOrder"])
   await expect(
     group(`${root}/web`).getByRole("button", { name: `Fold directory ${root}/web`, exact: true }),
   ).toHaveAttribute("aria-expanded", "false")
@@ -1344,7 +1362,11 @@ test("directory sidebar keeps entries and view isolated when switching servers",
     sidebar.getByRole("button", { name: `Reorder directory ${localDirectory}`, exact: true }),
   )
   await expect
-    .poll(() => sidebar.getByRole("group").evaluateAll((items) => items.map((item) => item.getAttribute("aria-label"))))
+    .poll(() =>
+      sidebar
+        .getByRole("group", { name: /.+/ })
+        .evaluateAll((items) => items.map((item) => item.getAttribute("aria-label"))),
+    )
     .toEqual([`${localDirectory}/child`, localDirectory])
   await sidebar.getByRole("button", { name: `Fold directory ${localDirectory}/child`, exact: true }).click()
   await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
@@ -1359,7 +1381,11 @@ test("directory sidebar keeps entries and view isolated when switching servers",
   await expect(sidebar.getByRole("group", { name: remoteDirectory, exact: true })).toBeVisible()
   await expect(sidebar.getByRole("group", { name: localDirectory, exact: true })).toHaveCount(0)
   await expect
-    .poll(() => sidebar.getByRole("group").evaluateAll((items) => items.map((item) => item.getAttribute("aria-label"))))
+    .poll(() =>
+      sidebar
+        .getByRole("group", { name: /.+/ })
+        .evaluateAll((items) => items.map((item) => item.getAttribute("aria-label"))),
+    )
     .toEqual([remoteDirectory, `${remoteDirectory}/child`])
   await expect(
     sidebar.getByRole("button", { name: `Fold directory ${remoteDirectory}/child`, exact: true }),
@@ -1379,7 +1405,11 @@ test("directory sidebar keeps entries and view isolated when switching servers",
   await expect(sidebar.getByRole("group", { name: localDirectory, exact: true })).toBeVisible()
   await expect(sidebar.getByRole("group", { name: remoteDirectory, exact: true })).toHaveCount(0)
   await expect
-    .poll(() => sidebar.getByRole("group").evaluateAll((items) => items.map((item) => item.getAttribute("aria-label"))))
+    .poll(() =>
+      sidebar
+        .getByRole("group", { name: /.+/ })
+        .evaluateAll((items) => items.map((item) => item.getAttribute("aria-label"))),
+    )
     .toEqual([`${localDirectory}/child`, localDirectory])
   await expect(
     sidebar.getByRole("button", { name: `Fold directory ${localDirectory}/child`, exact: true }),

@@ -139,7 +139,11 @@ it.live(
       const session = Schema.decodeUnknownSync(Schema.Struct({ data: Session.Info }))(
         yield* Effect.promise(() => created.json()),
       ).data
+      expect(
+        (yield* request(`/api/session/${session.id}/synthetic`, { text: "saved history", resume: false })).status,
+      ).toBe(200)
       yield* Effect.promise(() => fs.rm(directory, { recursive: true }))
+      expect((yield* request(`/api/session/${session.id}/message`)).status).toBe(200)
       expect((yield* request(`/api/session/${session.id}`)).status).toBe(200)
       expect((yield* request(`/api/location?location[directory]=${encodeURIComponent(directory)}`)).status).toBe(404)
       expect((yield* request("/api/session", { location: { directory } })).status).toBe(404)
@@ -170,8 +174,19 @@ it.live(
       expect(yield* Effect.promise(() => Bun.file(path.join(root, "execution.txt")).exists())).toBe(false)
       const replacement = yield* request("/api/session", { location: { directory: plain } })
       expect(replacement.status).toBe(200)
+      const plainSession = Schema.decodeUnknownSync(Schema.Struct({ data: Session.Info }))(
+        yield* Effect.promise(() => replacement.json()),
+      ).data
       yield* Effect.promise(() => fs.rm(plain, { recursive: true }))
       expect((yield* request("/api/session", { location: { directory: plain } })).status).toBe(404)
+      expect(
+        (yield* request(`/api/session/${plainSession.id}/prompt`, { text: "cold missing", resume: false })).status,
+      ).toBe(404)
+      expect((yield* request(`/api/session/${plainSession.id}/message`)).status).toBe(200)
+      yield* Effect.promise(() => fs.mkdir(plain))
+      expect(
+        (yield* request(`/api/session/${plainSession.id}/prompt`, { text: "cold restored", resume: false })).status,
+      ).toBe(200)
       const original = yield* request(`/api/session/${session.id}`)
       expect((yield* Effect.promise(() => original.json())).data.location.directory).toBe(directory)
     }).pipe(Effect.provideService(Flag.Overrides, "working_directories")),

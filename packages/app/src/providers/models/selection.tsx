@@ -326,20 +326,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       ),
     )
 
+    // Sync state can rebuild the Location context without changing the agent catalog's target.
+    const directory = createMemo(() => sdk().directory)
+
     createEffect(() => {
       if (serverSDK.connection.status() !== "connected") return
-      const directory = sdk().directory
+      const target = directory()
 
-      if (!directory) return
-      void syncWhileBooting(() => data.location.agent.sync({ directory })).catch(() => undefined)
+      if (!target) return
+      void syncWhileBooting(() => data.location.agent.sync({ directory: target })).catch(() => undefined)
     })
 
     const agentsVisible = createMemo(() => settings.visibility.customAgents() || hasCustomAgent(list()))
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
-
-    // The location object is rebuilt whenever its info loads, so key on the folder: reopening the same workspace
-    // would close it and drop a commit still waiting for its echo.
-    const directory = createMemo(() => sdk().directory)
 
     // Follows the routed Session's directory: the Session route keeps this provider while tabs switch workspaces.
     const workspace = createMemo(() => {

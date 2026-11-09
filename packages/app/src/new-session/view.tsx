@@ -290,7 +290,7 @@ function NewSessionLocation(props: {
 }) {
   const language = useLanguage()
   const command = useCommand()
-  const [layout, setLayout] = createStore({ width: 0, font: "" })
+  const [layout, setLayout] = createStore({ width: 0, font: "", controlWidth: 0 })
 
   command.register("new-session-worktree", () => [
     {
@@ -423,7 +423,7 @@ function NewSessionLocation(props: {
         {(directory) => (
           <div
             class="flex min-w-0 flex-1 justify-end pe-1.5"
-            style={{ "min-width": `min(50%, ${Math.ceil(fitted().minimum) + 6}px)` }}
+            style={{ "min-width": `min(100%, ${Math.ceil(fitted().minimum) + 6 + layout.controlWidth}px)` }}
           >
             <Tooltip
               placement="top"
@@ -460,6 +460,7 @@ function NewSessionLocation(props: {
             <Show when={props.onDirectory}>
               <button
                 type="button"
+                ref={(button) => createResizeObserver(button, () => setLayout("controlWidth", button.offsetWidth))}
                 aria-label={language.t("session.new.directory.change")}
                 title={directory}
                 class={`${TRIGGER} shrink-0`}

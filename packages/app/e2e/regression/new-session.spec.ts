@@ -437,6 +437,14 @@ for (const row of [
     const path = page.locator('[data-slot="new-session-location-path"]')
     await expect(path).toHaveText(row.pattern)
     await expect.poll(() => path.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+    const change = page.getByRole("button", { name: "Change working directory", exact: true })
+    await expect(change).toHaveAttribute("title", row.directory)
+    for (const width of [480, 1000, 600]) {
+      await page.setViewportSize({ width, height: 700 })
+      await expect(path).toBeVisible()
+      await expect(change).toBeInViewport()
+      await expect.poll(() => path.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+    }
     await path.hover()
     await expect(page.getByRole("tooltip")).toHaveText(row.directory)
 

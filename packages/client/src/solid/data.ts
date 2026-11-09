@@ -2078,6 +2078,9 @@ export function createData(config: CreateDataInput) {
           }
         })
       },
+      invalidateInfo(ref?: LocationRef) {
+        sync.invalidate(`location:${locationKey(ref ?? defaultLocation())}`)
+      },
       async sync(ref?: LocationRef) {
         await result.location.syncInfo(ref)
         const location = ref ?? defaultLocation()
@@ -2098,7 +2101,7 @@ export function createData(config: CreateDataInput) {
       },
       invalidate(ref?: LocationRef) {
         const location = ref ?? defaultLocation()
-        sync.invalidate(`location:${locationKey(location)}`)
+        result.location.invalidateInfo(location)
         result.location.vcs.invalidate(location)
         result.location.agent.invalidate(location)
         result.location.command.invalidate(location)

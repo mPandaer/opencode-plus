@@ -8,6 +8,8 @@ import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Menu } from "@opencode/ui/menu"
 import { Loader } from "@opencode/ui/loader"
+import { TextField } from "@opencode/ui/text-field"
+import { MenuScroll } from "@opencode/ui/menu-scroll"
 import type { SessionInfo } from "@opencode/client/promise"
 import { useLanguage } from "@/runtime/i18n/language"
 import { Persistence } from "@/runtime/persistence/schema"
@@ -69,7 +71,12 @@ function DirectorySidebar(props: {
   const actions = createProjectSessionActions()
   const activity = createSidebarSessionActivity()
   const server = ServerConnection.key(props.ctx.sdk.server)
-  const [local, setLocal] = createStore<{ limits: Record<string, number> }>({ limits: {} })
+  const [local, setLocal] = createStore({
+    limits: {} as Record<string, number>,
+    search: "",
+    projects: [] as string[],
+    directories: [] as string[],
+  })
   const [state, setState, , ready] = persisted(
     Persist.serverGlobal(props.ctx.sdk.scope, "sidebar.directories"),
     DirectoryState,
@@ -125,12 +132,51 @@ function DirectorySidebar(props: {
     return Array.from(
       Map.groupBy(entries, (entry) => entry.project?.id ?? pathKey(entry.directory)),
       ([, entries]) => ({
+        key: entries[0].project?.id ?? pathKey(entries[0].directory),
         project: entries[0].project,
         name: entries[0].project ? entries[0].project.name || entries[0].project.worktree : entries[0].directory,
         directories: entries.map((entry) => entry.directory),
       }),
     )
   })
+
+  const query = createMemo(() => local.search.trim().toLocaleLowerCase())
+  const owns = (project: string, directory: string) =>
+    (!local.projects.length && !local.directories.length) ||
+    local.projects.includes(project) ||
+    local.directories.includes(pathKey(directory))
+  const matches = (directory: string, project: string, title = "") =>
+    !query() || `${directory}\n${project}\n${title}`.toLocaleLowerCase().includes(query())
+  const filtered = createMemo(() =>
+    projects().flatMap((project) => {
+      const directories = project.directories.filter(
+        (directory) =>
+          owns(project.key, directory) &&
+          (matches(directory, project.name) ||
+            grouped()
+              .get(pathKey(directory))
+              ?.some((session) => matches(directory, project.name, session.title))),
+      )
+      return directories.length ? [{ ...project, directories }] : []
+    }),
+  )
+  const visibleSessions = createMemo(
+    () =>
+      new Map(
+        filtered().flatMap((project) =>
+          project.directories.map(
+            (directory) =>
+              [
+                pathKey(directory),
+                (grouped().get(pathKey(directory)) ?? []).filter((session) =>
+                  matches(directory, project.name, session.title),
+                ),
+              ] as const,
+          ),
+        ),
+      ),
+  )
+  const clearFilters = () => setLocal({ search: "", projects: [], directories: [] })
 
   onCleanup(props.ctx.data.listen(({ details }) => activity.update(server, details)))
   createEffect(() => {
@@ -166,7 +212,7 @@ function DirectorySidebar(props: {
         />
       </div>
       <For
-        each={(grouped().get(pathKey(directory)) ?? []).slice(0, local.limits[pathKey(directory)] ?? 5)}
+        each={(visibleSessions().get(pathKey(directory)) ?? []).slice(0, local.limits[pathKey(directory)] ?? 5)}
         fallback={
           <div class="ps-8 py-2 text-12-regular text-v2-text-text-faint">{language.t("sidebar.organize.empty")}</div>
         }
@@ -187,7 +233,7 @@ function DirectorySidebar(props: {
           />
         )}
       </For>
-      <Show when={(grouped().get(pathKey(directory))?.length ?? 0) > (local.limits[pathKey(directory)] ?? 5)}>
+      <Show when={(visibleSessions().get(pathKey(directory))?.length ?? 0) > (local.limits[pathKey(directory)] ?? 5)}>
         <Button
           variant="ghost-muted"
           size="small"
@@ -245,6 +291,68 @@ function DirectorySidebar(props: {
             () => undefined,
           )}
         >
+          <div class="flex flex-col gap-1 px-1">
+            <TextField
+              type="search"
+              label={language.t("sidebar.directory.search")}
+              hideLabel
+              placeholder={language.t("sidebar.directory.search")}
+              value={local.search}
+              onChange={(search) => setLocal("search", search)}
+            />
+            <div class="flex items-center gap-1">
+              <Menu placement="bottom-start">
+                <Menu.Trigger as={Button} variant="ghost-muted" size="small">
+                  {language.t("sidebar.directory.filter")}
+                </Menu.Trigger>
+                <Menu.Portal>
+                  <Menu.Content>
+                    <MenuScroll class="max-h-80">
+                      <For each={projects()}>
+                        {(project) => (
+                          <>
+                            <Menu.CheckboxItem
+                              checked={local.projects.includes(project.key)}
+                              closeOnSelect={false}
+                              onChange={(checked) =>
+                                setLocal("projects", (items) =>
+                                  checked ? [...items, project.key] : items.filter((item) => item !== project.key),
+                                )
+                              }
+                            >
+                              {language.t("sidebar.directory.projectGroup", { project: project.name })}
+                            </Menu.CheckboxItem>
+                            <For each={project.directories}>
+                              {(directory) => (
+                                <Menu.CheckboxItem
+                                  checked={local.directories.includes(pathKey(directory))}
+                                  closeOnSelect={false}
+                                  onChange={(checked) =>
+                                    setLocal("directories", (items) =>
+                                      checked
+                                        ? [...items, pathKey(directory)]
+                                        : items.filter((item) => item !== pathKey(directory)),
+                                    )
+                                  }
+                                >
+                                  {language.t("sidebar.directory.filterDirectory", { directory })}
+                                </Menu.CheckboxItem>
+                              )}
+                            </For>
+                          </>
+                        )}
+                      </For>
+                    </MenuScroll>
+                  </Menu.Content>
+                </Menu.Portal>
+              </Menu>
+              <Show when={local.search || local.projects.length || local.directories.length}>
+                <Button variant="ghost-muted" size="small" onClick={clearFilters}>
+                  {language.t("sidebar.directory.clearFilters")}
+                </Button>
+              </Show>
+            </div>
+          </div>
           <div data-scrollable class="min-h-0 flex-1 overflow-y-auto">
             <Show when={history.isPending}>
               <Loader />
@@ -254,8 +362,11 @@ function DirectorySidebar(props: {
                 {language.t("common.retry")}
               </Button>
             </Show>
-            <Show when={state.view === "projects"} fallback={<For each={state.directories}>{directoryRow}</For>}>
-              <For each={projects()}>
+            <Show
+              when={state.view === "projects"}
+              fallback={<For each={filtered().flatMap((project) => project.directories)}>{directoryRow}</For>}
+            >
+              <For each={filtered()}>
                 {(project) => (
                   <div
                     role="group"

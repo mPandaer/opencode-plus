@@ -805,6 +805,55 @@ test("project sidebar nests exact directories by shared Git identity and keeps p
   ).toBeVisible()
 })
 
+test("directory search and ownership filters retain groups and clear on reload", async ({ page }) => {
+  const root = "C:/OpenCode/FilterModules"
+  await mockWorkspace(page, {
+    name: "FilterModules",
+    projects: [
+      project({ id: "proj_filtermodules", directory: root, name: "Commerce" }),
+      project({ id: "proj_filterother", directory: "C:/Other", name: "Other" }),
+    ],
+    sessions: [
+      { id: "ses_filter_orders", title: "Invoice correction", directory: `${root}/orders` },
+      { id: "ses_filter_payments", title: "Checkout repair", directory: `${root}/payments` },
+      { id: "ses_filter_other", title: "Other work", directory: "C:/Other", projectID: "proj_filterother" },
+    ],
+    seed: { settings: { appearance: { tabLayout: "vertical" } }, tabs: ["ses_filter_orders"] },
+  })
+  await page.goto(sessionHref("ses_filter_orders"))
+  const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
+  const search = sidebar.getByRole("searchbox", { name: "Search sessions and groups", exact: true })
+  const group = (directory: string) => sidebar.getByRole("group", { name: directory, exact: true })
+  await search.fill("invoice")
+  await expect(group(`${root}/orders`).getByText("Invoice correction", { exact: true })).toBeVisible()
+  await expect(group(`${root}/payments`)).toHaveCount(0)
+  await search.fill("payments")
+  await expect(group(`${root}/payments`).getByText("Checkout repair", { exact: true })).toBeVisible()
+  await search.fill("commerce")
+  await expect(group(`${root}/orders`)).toBeVisible()
+  await expect(group(`${root}/payments`)).toBeVisible()
+  await expect(group("C:/Other")).toHaveCount(0)
+  await sidebar.getByRole("button", { name: "Filter ownership", exact: true }).click()
+  await page.getByRole("menuitemcheckbox", { name: `Directory: ${root}/payments`, exact: true }).click()
+  await page.getByRole("menuitemcheckbox", { name: `Directory: ${root}/orders`, exact: true }).click()
+  await page.keyboard.press("Escape")
+  await expect(group(`${root}/orders`)).toBeVisible()
+  await expect(group(`${root}/payments`)).toBeVisible()
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Project view", exact: true }).click()
+  const commerce = sidebar.getByRole("group", { name: "Project: Commerce", exact: true })
+  await expect(commerce.getByRole("group")).toHaveCount(2)
+  await search.fill("checkout")
+  await expect(commerce.getByRole("group")).toHaveCount(1)
+  await sidebar.getByRole("button", { name: "Clear filters", exact: true }).click()
+  await expect(group("C:/Other")).toBeVisible()
+  await search.fill("no results")
+  await page.reload()
+  await expect(search).toHaveValue("")
+  await expect(group(`${root}/orders`)).toBeVisible()
+  await expect(group("C:/Other")).toBeVisible()
+})
+
 test("project new session requires a directory choice and submits the selected exact path", async ({ page }) => {
   const root = "C:/OpenCode/ProjectCreate"
   const child = "C:\\OpenCode\\ProjectCreate\\api"

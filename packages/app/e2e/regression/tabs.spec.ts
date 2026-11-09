@@ -826,19 +826,8 @@ test("directory groups drag in shared order and keep folded layouts after activi
   const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
   const group = (directory: string) => sidebar.getByRole("group", { name: directory, exact: true })
   await expect(group(`${root}/api`).getByText("API older", { exact: true })).toBeVisible()
-  const drag = async (handle: Locator, target: Locator) => {
-    await expect(handle).toBeVisible()
-    await expect(target).toBeVisible()
-    const source = await handle.boundingBox()
-    const destination = await target.boundingBox()
-    if (!source || !destination) throw new Error("Group drag target is not rendered")
-    await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
-    await page.mouse.down()
-    await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2 + 6, { steps: 3 })
-    await page.mouse.move(destination.x + 12, destination.y + destination.height / 2, { steps: 20 })
-    await page.mouse.up()
-  }
-  await drag(
+  await dragSidebarGroup(
+    page,
     group(`${root}/api`).getByRole("button", { name: `Reorder directory ${root}/api`, exact: true }),
     group(`${root}/web`).getByRole("button", { name: `Reorder directory ${root}/web`, exact: true }),
   )
@@ -860,7 +849,8 @@ test("directory groups drag in shared order and keep folded layouts after activi
         .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
     )
     .toEqual([`${root}/web`, `${root}/api`])
-  await drag(
+  await dragSidebarGroup(
+    page,
     other.getByRole("button", { name: "Reorder project Other order", exact: true }),
     ordered.getByRole("button", { name: "Fold project Ordered", exact: true }),
   )
@@ -1138,19 +1128,31 @@ test("directory sidebar keeps entries and view isolated when switching servers",
   const remoteDirectory = "/remote"
   const local = session({ id: "ses_dir_local", title: "Local history", directory: localDirectory })
   const remote = session({ id: "ses_dir_remote", title: "Remote history", directory: remoteDirectory })
+  const localChild = session({
+    id: "ses_dir_local_child",
+    title: "Local child history",
+    directory: `${localDirectory}/child`,
+    projectID: "proj_local",
+  })
+  const remoteChild = session({
+    id: "ses_dir_remote_child",
+    title: "Remote child history",
+    directory: `${remoteDirectory}/child`,
+    projectID: "proj_remote",
+  })
   await mockServers(page, {
     [SERVER]: {
       directory: localDirectory,
       provider: provider(),
       project: project({ id: "proj_local", directory: localDirectory }),
-      sessions: [local],
+      sessions: [local, localChild],
       pageMessages: () => ({ items: [] }),
     },
     [REMOTE_SERVER]: {
       directory: remoteDirectory,
       provider: provider(),
       project: project({ id: "proj_remote", directory: remoteDirectory }),
-      sessions: [remote],
+      sessions: [remote, remoteChild],
       pageMessages: () => ({ items: [] }),
     },
   })
@@ -1162,6 +1164,16 @@ test("directory sidebar keeps entries and view isolated when switching servers",
   await page.goto(sessionHref(local.id))
   const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
   await expect(sidebar.getByRole("group", { name: localDirectory, exact: true })).toBeVisible()
+  await expect(sidebar.getByRole("group", { name: `${localDirectory}/child`, exact: true })).toBeVisible()
+  await dragSidebarGroup(
+    page,
+    sidebar.getByRole("button", { name: `Reorder directory ${localDirectory}/child`, exact: true }),
+    sidebar.getByRole("button", { name: `Reorder directory ${localDirectory}`, exact: true }),
+  )
+  await expect
+    .poll(() => sidebar.getByRole("group").evaluateAll((items) => items.map((item) => item.getAttribute("aria-label"))))
+    .toEqual([`${localDirectory}/child`, localDirectory])
+  await sidebar.getByRole("button", { name: `Fold directory ${localDirectory}/child`, exact: true }).click()
   await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
   await page.getByRole("menuitem", { name: "Project view", exact: true }).click()
   await sidebar
@@ -1171,6 +1183,18 @@ test("directory sidebar keeps entries and view isolated when switching servers",
   await page.goto(sessionHref(remote.id, REMOTE_SERVER))
   await expect(sidebar.getByRole("group", { name: remoteDirectory, exact: true })).toBeVisible()
   await expect(sidebar.getByRole("group", { name: localDirectory, exact: true })).toHaveCount(0)
+  await expect
+    .poll(() => sidebar.getByRole("group").evaluateAll((items) => items.map((item) => item.getAttribute("aria-label"))))
+    .toEqual([remoteDirectory, `${remoteDirectory}/child`])
+  await expect(
+    sidebar.getByRole("button", { name: `Fold directory ${remoteDirectory}/child`, exact: true }),
+  ).toHaveAttribute("aria-expanded", "true")
+  await sidebar.getByRole("button", { name: `Fold directory ${remoteDirectory}`, exact: true }).click()
+  await page.reload()
+  await expect(sidebar.getByRole("button", { name: `Fold directory ${remoteDirectory}`, exact: true })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  )
   await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
   await page.getByRole("menuitem", { name: "Flat view", exact: true }).click()
   await sidebar.locator(`[data-titlebar-tab-link][href="${sessionHref(local.id)}"]`).click()
@@ -1179,6 +1203,12 @@ test("directory sidebar keeps entries and view isolated when switching servers",
   await page.getByRole("menuitem", { name: "Directory view", exact: true }).click()
   await expect(sidebar.getByRole("group", { name: localDirectory, exact: true })).toBeVisible()
   await expect(sidebar.getByRole("group", { name: remoteDirectory, exact: true })).toHaveCount(0)
+  await expect
+    .poll(() => sidebar.getByRole("group").evaluateAll((items) => items.map((item) => item.getAttribute("aria-label"))))
+    .toEqual([`${localDirectory}/child`, localDirectory])
+  await expect(
+    sidebar.getByRole("button", { name: `Fold directory ${localDirectory}/child`, exact: true }),
+  ).toHaveAttribute("aria-expanded", "false")
 })
 
 test("directory sidebar chooses and retains an ordinary no-Git folder", async ({ page }) => {
@@ -2799,4 +2829,17 @@ async function mockGaveUpPermission(page: Page, tabLayout: "horizontal" | "inbox
     release: () => released.resolve(),
     attempts: () => attempts.count,
   }
+}
+
+async function dragSidebarGroup(page: Page, handle: Locator, target: Locator) {
+  await expect(handle).toBeVisible()
+  await expect(target).toBeVisible()
+  const source = await handle.boundingBox()
+  const destination = await target.boundingBox()
+  if (!source || !destination) throw new Error("Group drag target is not rendered")
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2 + 6, { steps: 3 })
+  await page.mouse.move(destination.x + 12, destination.y + destination.height / 2, { steps: 20 })
+  await page.mouse.up()
 }

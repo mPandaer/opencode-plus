@@ -1,4 +1,6 @@
 import { FileSystem } from "@opencode/core/filesystem"
+import { Flag } from "@opencode/core/flag"
+import { FSUtil } from "@opencode/util/fs-util"
 import { Location } from "@opencode/core/location"
 import { Plugin } from "@opencode/core/plugin"
 import { LocationServiceMap } from "@opencode/core/location-services"
@@ -90,10 +92,18 @@ export const layer = Layer.effect(
   LocationMiddleware,
   Effect.gen(function* () {
     const locations = yield* LocationServiceMap.Service
+    const fs = yield* FSUtil.Service
     return LocationMiddleware.of((effect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        return yield* effect.pipe(Effect.provide(locations.get(requestRef(request))), locationErrors)
+        return yield* Effect.gen(function* () {
+          if (yield* Flag.enabled("working_directories")) yield* FileSystem.requireDirectory(requestRef(request))
+          return yield* effect
+        }).pipe(
+          Effect.provide(locations.get(requestRef(request))),
+          Effect.provideService(FSUtil.Service, fs),
+          locationErrors,
+        )
       }),
     )
   }),

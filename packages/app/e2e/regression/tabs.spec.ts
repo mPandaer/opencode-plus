@@ -806,6 +806,133 @@ test("project sidebar nests exact directories by shared Git identity and keeps p
   ).toBeVisible()
 })
 
+test("directory search and ownership filters retain groups and clear on reload", async ({ page }) => {
+  const root = "C:/OpenCode/FilterModules"
+  await mockWorkspace(page, {
+    name: "FilterModules",
+    projects: [
+      project({ id: "proj_filtermodules", directory: root, name: "Commerce" }),
+      project({ id: "proj_filterother", directory: "C:/Other", name: "Other" }),
+    ],
+    sessions: [
+      { id: "ses_filter_orders", title: "Invoice correction", directory: `${root}/orders` },
+      { id: "ses_filter_payments", title: "Checkout repair", directory: `${root}/payments` },
+      { id: "ses_filter_other", title: "Other work", directory: "C:/Other", projectID: "proj_filterother" },
+    ],
+    seed: { settings: { appearance: { tabLayout: "vertical" } }, tabs: ["ses_filter_orders"] },
+  })
+  await page.goto(sessionHref("ses_filter_orders"))
+  const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
+  const search = sidebar.getByRole("searchbox", { name: "Search sessions and groups", exact: true })
+  const group = (directory: string) => sidebar.getByRole("group", { name: directory, exact: true })
+  await search.fill("invoice")
+  await expect(group(`${root}/orders`).getByText("Invoice correction", { exact: true })).toBeVisible()
+  await expect(group(`${root}/payments`)).toHaveCount(0)
+  await search.fill("payments")
+  await expect(group(`${root}/payments`).getByText("Checkout repair", { exact: true })).toBeVisible()
+  await search.fill("commerce")
+  await expect(group(`${root}/orders`)).toBeVisible()
+  await expect(group(`${root}/payments`)).toBeVisible()
+  await expect(group("C:/Other")).toHaveCount(0)
+  await sidebar.getByRole("button", { name: "Filter ownership", exact: true }).click()
+  await page.getByRole("menuitemcheckbox", { name: `Directory: ${root}/payments`, exact: true }).click()
+  await page.getByRole("menuitemcheckbox", { name: `Directory: ${root}/orders`, exact: true }).click()
+  await page.keyboard.press("Escape")
+  await expect(group(`${root}/orders`)).toBeVisible()
+  await expect(group(`${root}/payments`)).toBeVisible()
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Project view", exact: true }).click()
+  const commerce = sidebar.getByRole("group", { name: "Project: Commerce", exact: true })
+  await expect(commerce.getByRole("group")).toHaveCount(2)
+  await search.fill("checkout")
+  await expect(commerce.getByRole("group")).toHaveCount(1)
+  await sidebar.getByRole("button", { name: "Clear filters", exact: true }).click()
+  await expect(group("C:/Other")).toBeVisible()
+  await sidebar.getByRole("button", { name: "Filter ownership", exact: true }).click()
+  await page.getByRole("menuitemcheckbox", { name: "Project: Commerce", exact: true }).click()
+  await page.getByRole("menuitemcheckbox", { name: "Project: Other", exact: true }).click()
+  await page.keyboard.press("Escape")
+  await expect(group(`${root}/orders`)).toBeVisible()
+  await expect(group("C:/Other")).toBeVisible()
+  await search.fill("checkout")
+  await expect(commerce.getByRole("group")).toHaveCount(1)
+  await expect(group("C:/Other")).toHaveCount(0)
+  await search.fill("no results")
+  await page.reload()
+  await expect(search).toHaveValue("")
+  await expect(group(`${root}/orders`)).toBeVisible()
+  await expect(group("C:/Other")).toBeVisible()
+})
+
+test("filtered sidebar creates in current then explicit directories and reveals only after success", async ({
+  page,
+}) => {
+  const root = "C:/OpenCode/FilteredCreate"
+  const orders = `${root}/orders`
+  const payments = `${root}/payments`
+  const creates: unknown[] = []
+  await mockWorkspace(page, {
+    name: "FilteredCreate",
+    sessions: [
+      { id: "ses_filtered_orders", title: "Order work", directory: orders },
+      { id: "ses_filtered_payments", title: "Payment work", directory: payments },
+    ],
+    onSessionCreate: (body) => void creates.push(body.location),
+    seed: { settings: { appearance: { tabLayout: "vertical" } }, tabs: ["ses_filtered_orders"] },
+  })
+  await page.goto(sessionHref("ses_filtered_orders"))
+  const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
+  const search = sidebar.getByRole("searchbox", { name: "Search sessions and groups", exact: true })
+  const group = (directory: string) => sidebar.getByRole("group", { name: directory, exact: true })
+  await search.fill("payments")
+  await sidebar.getByRole("button", { name: "Filter ownership", exact: true }).click()
+  await page.getByRole("menuitemcheckbox", { name: `Directory: ${payments}`, exact: true }).click()
+  await page.keyboard.press("Escape")
+  await page.keyboard.press("Control+n")
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(orders)
+  await expect(search).toHaveValue("payments")
+  const editor = page.locator('[data-component="composer-editor"]')
+  await expect(editor).toBeEditable()
+  await editor.fill("Continue orders despite payment filter")
+  const pending = await holdRoute(page, /\/api\/session(?:\?|$)/, { method: "POST" })
+  await page.locator('[data-action="composer-submit"]').click()
+  await pending.arrived
+  await expect(search).toHaveValue("payments")
+  await expect(group(orders)).toHaveCount(0)
+  pending.release()
+  await expect.poll(() => creates).toEqual([{ directory: orders }])
+  await expect(group(orders).getByText("New session", { exact: true })).toBeVisible()
+  await expect(search).toHaveValue("")
+  await expect(sidebar.getByRole("button", { name: "Clear filters", exact: true })).toHaveCount(0)
+  await search.fill("payments")
+  await group(payments)
+    .getByRole("button", { name: `New session in ${payments}`, exact: true })
+    .click()
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(payments)
+  await expect(editor).toBeEditable()
+  await editor.fill("Continue payments")
+  await page.locator('[data-action="composer-submit"]').click()
+  await expect.poll(() => creates).toEqual([{ directory: orders }, { directory: payments }])
+  await expect(group(payments).getByText("New session", { exact: true })).toBeVisible()
+  await expect(search).toHaveValue("payments")
+  await sidebar.getByRole("button", { name: "Filter ownership", exact: true }).click()
+  await page.getByRole("menuitemcheckbox", { name: `Directory: ${payments}`, exact: true }).click()
+  await page.keyboard.press("Escape")
+  await search.fill("Payment work")
+  await page.getByRole("button", { name: "Home", exact: true }).click()
+  await page.keyboard.press("Control+n")
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(payments)
+  await expect(editor).toBeEditable()
+  await editor.fill("Use the last directory, not search results")
+  await page.locator('[data-action="composer-submit"]').click()
+  await expect.poll(() => creates).toEqual([{ directory: orders }, { directory: payments }, { directory: payments }])
+  await expect(group(payments).getByText("New session", { exact: true })).toHaveCount(2)
+  await expect(search).toHaveValue("")
+  await sidebar.getByRole("button", { name: "Filter ownership", exact: true }).click()
+  await expect(page.getByRole("menuitemcheckbox", { name: `Directory: ${payments}`, exact: true })).toBeChecked()
+  await page.keyboard.press("Escape")
+})
+
 test("directory groups drag in shared order and keep folded layouts after activity and reload", async ({ page }) => {
   const root = "C:/OpenCode/Ordered"
   const workspace = await mockWorkspace(page, {
@@ -923,6 +1050,8 @@ test("project new session requires a directory choice and submits the selected e
   await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
   await page.getByRole("menuitem", { name: "Project view", exact: true }).click()
   const group = sidebar.getByRole("group", { name: "Project: ProjectCreate", exact: true })
+  const search = sidebar.getByRole("searchbox", { name: "Search sessions and groups", exact: true })
+  await search.fill("Root history")
   await group.getByRole("button", { name: "New session in project ProjectCreate", exact: true }).click()
   const picker = page.getByRole("dialog", { name: "Choose working directory", exact: true })
   await expect(picker.getByRole("treeitem", { name: "api", exact: true })).toBeVisible()
@@ -945,6 +1074,44 @@ test("project new session requires a directory choice and submits the selected e
   await expect(
     group.getByRole("group", { name: child, exact: true }).getByText("New session", { exact: true }),
   ).toBeVisible()
+  await expect(search).toHaveValue("")
+})
+
+test("directory sidebar keeps unavailable groups and history while blocking creation until restore", async ({
+  page,
+}) => {
+  const directory = "C:/OpenCode/Unavailable/module"
+  let missing = true
+  const creates: unknown[] = []
+  await mockWorkspace(page, {
+    name: "Unavailable",
+    flags: { working_directories: true },
+    sessions: [{ id: "ses_unavailable_module", title: "Preserved module history", directory }],
+    onSessionCreate: (body) => {
+      creates.push(body)
+    },
+    seed: { settings: { appearance: { tabLayout: "vertical" } } },
+  })
+  await page.route("**/api/location?**", (route) => {
+    if (!missing || new URL(route.request().url()).searchParams.get("location[directory]") !== directory)
+      return route.fallback()
+    return route.fulfill({
+      status: 404,
+      json: { _tag: "LocationNotFoundError", location: { directory }, message: `Location not found: ${directory}` },
+    })
+  })
+  await page.goto(sessionHref("ses_unavailable_module"))
+  const group = page.locator('[data-slot="vertical-tabs-sidebar"]').getByRole("group", { name: directory, exact: true })
+  await expect(group.getByText("Preserved module history", { exact: true })).toBeVisible()
+  await expect(group.getByText("Directory unavailable", { exact: true })).toBeVisible()
+  await expect(group.getByRole("button", { name: `New session in ${directory}`, exact: true })).toBeDisabled()
+  expect(creates).toEqual([])
+  missing = false
+  await group.getByRole("button", { name: "Try again", exact: true }).click()
+  await expect(group.getByRole("button", { name: `New session in ${directory}`, exact: true })).toBeEnabled()
+  await group.getByRole("button", { name: `New session in ${directory}`, exact: true }).click()
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(directory)
+  expect(creates).toEqual([])
 })
 
 test("directory sidebar adds an empty chosen subdirectory, confirms its full path and creates there", async ({
@@ -1180,7 +1347,9 @@ test("directory sidebar keeps entries and view isolated when switching servers",
     .getByRole("group", { name: localDirectory, exact: true })
     .getByText("Local history", { exact: true })
     .click()
+  await sidebar.getByRole("searchbox", { name: "Search sessions and groups", exact: true }).fill("Local history")
   await page.goto(sessionHref(remote.id, REMOTE_SERVER))
+  await expect(sidebar.getByRole("searchbox", { name: "Search sessions and groups", exact: true })).toHaveValue("")
   await expect(sidebar.getByRole("group", { name: remoteDirectory, exact: true })).toBeVisible()
   await expect(sidebar.getByRole("group", { name: localDirectory, exact: true })).toHaveCount(0)
   await expect

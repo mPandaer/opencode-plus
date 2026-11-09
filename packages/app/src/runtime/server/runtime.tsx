@@ -36,7 +36,7 @@ import { useCurrentRoute } from "@/shell/state/layout"
 import { useTabs } from "@/shell/tabs/tabs"
 import { Persist, persisted } from "@/runtime/persistence/storage"
 import { createDesktopData } from "./data"
-import { ModelState, WorkingDirectoryState } from "./persistence"
+import { ModelState, SidebarDirectoryState, WorkingDirectoryState } from "./persistence"
 import { useLanguage } from "@/runtime/i18n/language"
 import { showToast } from "@/shell/notifications/toast"
 import { formatServerError } from "./errors"
@@ -205,6 +205,23 @@ function createServerController(
   const currentRoute = useCurrentRoute()
   const connKey = ServerConnection.key(conn)
   const sdk = createServerSdkContext(conn, scope)
+  // Client sidebar preferences share the server controller lifetime, including when the sidebar is not mounted.
+  const [sidebarState, setSidebarState, , sidebarReady] = persisted(
+    Persist.serverGlobal(scope, "sidebar.directories"),
+    SidebarDirectoryState,
+    { directories: [] },
+  )
+  const [revealedSession, setRevealedSession] = createSignal<string>()
+  const addSidebarDirectory = (directory: string) => {
+    if (!sidebarReady()) return false
+    batch(() => {
+      setSidebarState("closed", (items) => (items ?? []).filter((item) => pathKey(item) !== pathKey(directory)))
+      if (!sidebarState.directories.some((item) => pathKey(item) === pathKey(directory)))
+        setSidebarState("directories", (items) => [...items, directory])
+      setSidebarState("view", sidebarState.view === "projects" ? "projects" : "directories")
+    })
+    return true
+  }
   const [directoryState, setDirectoryState, , directoryReady] = persisted(
     Persist.serverGlobal(scope, "working-directory"),
     WorkingDirectoryState,
@@ -354,6 +371,15 @@ function createServerController(
     data,
     sdk,
     sync,
+    directories: {
+      state: sidebarState,
+      set: setSidebarState,
+      ready: sidebarReady,
+      add: addSidebarDirectory,
+      revealed: revealedSession,
+      reveal: (sessionID: string) => setRevealedSession(sessionID),
+      revealedDone: () => setRevealedSession(undefined),
+    },
     workingDirectory: {
       ready: directoryReady,
       last: () => directoryState.last,

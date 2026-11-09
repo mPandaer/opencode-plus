@@ -17,6 +17,7 @@ export type WorkspaceLocation = LocationContext & {
   readonly current: LocationGetOutput | undefined
   /** Set only when the server reports that this exact Location's folder does not exist. */
   readonly missing: LocationRef | undefined
+  readonly retry: () => void
 }
 
 const context = createSimpleContext({
@@ -59,9 +60,10 @@ const context = createSimpleContext({
       }
 
       timer = setTimeout(() => dispatch({ type: "sync.timed-out", attempt: effect.attempt }), effect.timeout)
-      // syncInfo caches its answer, so sync reuses it instead of reading the Location again.
-      void data.location
-        .syncInfo(effect.location)
+      // Resolve freshly: a warm client or server Location does not prove its folder still exists.
+      void serverSDK.api.location
+        .get({ location: effect.location })
+        .then(() => data.location.syncInfo(effect.location))
         .then(() => {
           dispatch({ type: "info.resolved", attempt: effect.attempt })
 
@@ -99,6 +101,7 @@ const context = createSimpleContext({
       ref: ref(),
       current: current(),
       missing: missing(),
+      retry: () => dispatch({ type: "retry.requested" }),
     }))
   },
 })

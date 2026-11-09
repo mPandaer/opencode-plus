@@ -853,6 +853,11 @@ export const dict = {
   "settings.experimental.sidebarOrganize.projects": "Projects",
   "settings.experimental.sidebarOrganize.list": "One list",
   "sidebar.directory.add": "Add directory",
+  "sidebar.directory.unavailable": "Directory unavailable",
+  "sidebar.directory.retry": "Retry original directory",
+  "sidebar.directory.replacement": "Choose new location",
+  "sidebar.directory.recovery":
+    "Restore the original path to continue this session, or add a new working directory. The session stays at its original location.",
   "sidebar.directory.choose": "Choose folder…",
   "sidebar.directory.browse": "Browse {{project}}",
   "sidebar.directory.confirm": "Confirm working directory",

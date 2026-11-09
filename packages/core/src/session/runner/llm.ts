@@ -1,6 +1,10 @@
 export * as SessionRunnerLLM from "./llm.js"
 
 import { Message } from "@opencode/ai/effect"
+import { FSUtil } from "@opencode/util/fs-util"
+import { FileSystem } from "../../filesystem.js"
+import { Flag } from "../../flag.js"
+import { Location } from "../../location.js"
 import { and, desc, eq, inArray, sql } from "drizzle-orm"
 import { Cause, Effect, Exit, FiberMap, Layer } from "effect"
 import { Database } from "../../database/database.js"
@@ -46,6 +50,11 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const bus = yield* Bus.Service
+    const fs = yield* FSUtil.Service
+    const location = yield* Location.Service
+    const checkDirectory = Effect.gen(function* () {
+      if (yield* Flag.enabled("working_directories")) yield* FileSystem.requireDirectory(location)
+    }).pipe(Effect.provideService(FSUtil.Service, fs))
     const lifecycle = yield* LocationLifecycle.Service
     const store = yield* SessionStore.Service
     const context = yield* SessionContext.Service
@@ -83,6 +92,7 @@ const layer = Layer.effect(
         Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {
             while (true) {
+              yield* checkDirectory
               if (lifecycle.isClosed()) {
                 yield* restore(modelTransport.close(sessionID))
                 return DrainResult.Reloaded({
@@ -178,7 +188,9 @@ const layer = Layer.effect(
                 // The Session would go idle; a plugin may admit input to keep this execution working.
                 yield* restore(
                   SessionBackground.outstanding(jobs, store, sessionID).pipe(
-                    Effect.flatMap((background) => hooks.trigger("session", "experimental.idle", { sessionID, background })),
+                    Effect.flatMap((background) =>
+                      hooks.trigger("session", "experimental.idle", { sessionID, background }),
+                    ),
                   ),
                 )
                 if (!(yield* SessionInbox.has(db, sessionID, "input"))) return DrainResult.Complete()
@@ -444,6 +456,8 @@ export const node = makeLocationNode({
   service: Service,
   layer,
   deps: [
+    FSUtil.node,
+    Location.node,
     Bus.node,
     LocationLifecycle.node,
     llmClient,

@@ -49,7 +49,7 @@ export function DirectoryAdd(props: { ctx: ServerCtx; onAdd: (directory: string)
   )
 }
 
-function DirectoryConfirm(props: { ctx: ServerCtx; directory: string; onAdd: (directory: string) => void }) {
+export function DirectoryConfirm(props: { ctx: ServerCtx; directory: string; onAdd: (directory: string) => void }) {
   const language = useLanguage()
   const dialog = useDialog()
   const [state, setState] = createStore<{ value: DirectoryAddState }>({ value: { type: "ready" } })

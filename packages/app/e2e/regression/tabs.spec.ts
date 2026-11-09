@@ -884,6 +884,12 @@ test("filtered sidebar creates in current then explicit directories and reveals 
   const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
   const search = sidebar.getByRole("searchbox", { name: "Search sessions and groups", exact: true })
   const group = (directory: string) => sidebar.getByRole("group", { name: directory, exact: true })
+  await group(orders)
+    .getByRole("button", { name: `Fold directory ${orders}`, exact: true })
+    .click()
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Project view", exact: true }).click()
+  await sidebar.getByRole("button", { name: "Fold project FilteredCreate", exact: true }).click()
   await search.fill("payments")
   await sidebar.getByRole("button", { name: "Filter ownership", exact: true }).click()
   await page.getByRole("menuitemcheckbox", { name: `Directory: ${payments}`, exact: true }).click()
@@ -972,7 +978,7 @@ test("directory groups drag in shared order and keep folded layouts after activi
   await expect
     .poll(() =>
       sidebar
-        .getByRole("group")
+        .getByRole("group", { name: /.+/ })
         .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
     )
     .toEqual([`${root}/web`, `${root}/api`, "C:/OtherOrder"])
@@ -1033,7 +1039,7 @@ test("directory groups drag in shared order and keep folded layouts after activi
   await expect
     .poll(() =>
       sidebar
-        .getByRole("group")
+        .getByRole("group", { name: /.+/ })
         .evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-label"))),
     )
     .toEqual([`${root}/web`, `${root}/api`, "C:/OtherOrder"])

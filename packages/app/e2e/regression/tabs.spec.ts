@@ -750,6 +750,103 @@ test("directory sidebar discovers exact historical directories beyond the Home p
   await expect(group(`${root}/api`).getByText("Module history", { exact: true })).toBeVisible()
 })
 
+test("project sidebar nests exact directories by shared Git identity and keeps plain paths independent", async ({
+  page,
+}) => {
+  const root = "C:/OpenCode/ProjectModules"
+  await mockWorkspace(page, {
+    name: "ProjectModules",
+    projects: [
+      project({ id: "proj_projectmodules", directory: root, name: "Modules" }),
+      project({ id: "proj_other", directory: "C:/Other", name: "Other" }),
+      project({ id: "global", directory: "C:/Notes", vcs: undefined }),
+    ],
+    sessions: [
+      { id: "ses_project_root", title: "Root work" },
+      { id: "ses_project_api", title: "API work", directory: `${root}/api` },
+      { id: "ses_project_web", title: "Web work", directory: `${root}/web` },
+      { id: "ses_other_api", title: "Other API work", directory: "C:/Other/api", projectID: "proj_other" },
+      { id: "ses_plain_a", title: "Notes work", directory: "C:/Notes/a", projectID: "global" },
+      { id: "ses_plain_b", title: "More notes", directory: "C:/Notes/b", projectID: "global" },
+    ],
+    seed: { settings: { appearance: { tabLayout: "vertical" } }, tabs: ["ses_project_root"] },
+  })
+  await page.goto(sessionHref("ses_project_root"))
+  const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Project view", exact: true }).click()
+  const modules = sidebar.getByRole("group", { name: `Project: Modules`, exact: true })
+  await expect(modules.getByRole("group")).toHaveCount(3)
+  await expect(
+    modules.getByRole("group", { name: root, exact: true }).getByText("Root work", { exact: true }),
+  ).toBeVisible()
+  await expect(
+    modules.getByRole("group", { name: `${root}/api`, exact: true }).getByText("API work", { exact: true }),
+  ).toBeVisible()
+  await expect(
+    modules.getByRole("group", { name: `${root}/web`, exact: true }).getByText("Web work", { exact: true }),
+  ).toBeVisible()
+  await expect(
+    sidebar.getByRole("group", { name: "Project: Other", exact: true }).getByText("Other API work", { exact: true }),
+  ).toBeVisible()
+  await expect(
+    sidebar.getByRole("group", { name: "Project: C:/Notes/a", exact: true }).getByText("Notes work", { exact: true }),
+  ).toBeVisible()
+  await expect(
+    sidebar.getByRole("group", { name: "Project: C:/Notes/b", exact: true }).getByText("More notes", { exact: true }),
+  ).toBeVisible()
+  await page.reload()
+  await expect(modules.getByRole("group")).toHaveCount(3)
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Directory view", exact: true }).click()
+  await expect(sidebar.getByRole("group", { name: "Project: Modules", exact: true })).toHaveCount(0)
+  await expect(
+    sidebar.getByRole("group", { name: `${root}/api`, exact: true }).getByText("API work", { exact: true }),
+  ).toBeVisible()
+})
+
+test("project new session requires a directory choice and submits the selected exact path", async ({ page }) => {
+  const root = "C:/OpenCode/ProjectCreate"
+  const child = "C:\\OpenCode\\ProjectCreate\\api"
+  const creates: unknown[] = []
+  await mockWorkspace(page, {
+    name: "ProjectCreate",
+    sessions: [{ id: "ses_project_create", title: "Root history" }],
+    fileList: (path) => (path === root ? [fileNode(root, "api", "directory")] : []),
+    onSessionCreate: (body) => {
+      creates.push(body)
+    },
+    seed: { settings: { appearance: { tabLayout: "vertical" } }, tabs: ["ses_project_create"] },
+  })
+  await page.goto(sessionHref("ses_project_create"))
+  const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
+  await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Project view", exact: true }).click()
+  const group = sidebar.getByRole("group", { name: "Project: ProjectCreate", exact: true })
+  await group.getByRole("button", { name: "New session in project ProjectCreate", exact: true }).click()
+  const picker = page.getByRole("dialog", { name: "Choose working directory", exact: true })
+  await expect(picker.getByRole("treeitem", { name: "api", exact: true })).toBeVisible()
+  await picker.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expectPath(page, sessionHref("ses_project_create"))
+  expect(creates).toEqual([])
+  await group.getByRole("button", { name: "New session in project ProjectCreate", exact: true }).click()
+  await picker.getByRole("treeitem", { name: "api", exact: true }).click()
+  await picker.getByRole("button", { name: "Select folder", exact: true }).click()
+  const confirm = page.getByRole("dialog", { name: "Confirm working directory", exact: true })
+  await expect(confirm.getByText(child, { exact: true })).toBeVisible()
+  await confirm.getByRole("button", { name: "New session", exact: true }).click()
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(child)
+  await expect(page.locator('[data-component="new-session"] [data-action="prompt-project"]')).toBeEnabled()
+  const editor = page.locator('[data-component="composer-editor"]')
+  await expect(editor).toBeEditable()
+  await editor.fill("Work in the selected API module")
+  await page.locator('[data-action="composer-submit"]').click()
+  await expect.poll(() => creates).toEqual([expect.objectContaining({ location: { directory: child } })])
+  await expect(
+    group.getByRole("group", { name: child, exact: true }).getByText("New session", { exact: true }),
+  ).toBeVisible()
+})
+
 test("directory sidebar adds an empty chosen subdirectory, confirms its full path and creates there", async ({
   page,
 }) => {
@@ -825,14 +922,18 @@ test("directory sidebar keeps entries and view isolated when switching servers",
   const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
   await expect(sidebar.getByRole("group", { name: localDirectory, exact: true })).toBeVisible()
   await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
-  await page.getByRole("menuitem", { name: "Flat view", exact: true }).click()
-  await sidebar.locator(`[data-titlebar-tab-link][href="${sessionHref(remote.id, REMOTE_SERVER)}"]`).click()
+  await page.getByRole("menuitem", { name: "Project view", exact: true }).click()
+  await sidebar
+    .getByRole("group", { name: localDirectory, exact: true })
+    .getByText("Local history", { exact: true })
+    .click()
+  await page.goto(sessionHref(remote.id, REMOTE_SERVER))
   await expect(sidebar.getByRole("group", { name: remoteDirectory, exact: true })).toBeVisible()
   await expect(sidebar.getByRole("group", { name: localDirectory, exact: true })).toHaveCount(0)
   await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
   await page.getByRole("menuitem", { name: "Flat view", exact: true }).click()
   await sidebar.locator(`[data-titlebar-tab-link][href="${sessionHref(local.id)}"]`).click()
-  await expect(sidebar.getByRole("group")).toHaveCount(0)
+  await expect(sidebar.getByRole("group", { name: "Project: Local", exact: true })).toBeVisible()
   await sidebar.getByRole("button", { name: "Sidebar view", exact: true }).click()
   await page.getByRole("menuitem", { name: "Directory view", exact: true }).click()
   await expect(sidebar.getByRole("group", { name: localDirectory, exact: true })).toBeVisible()

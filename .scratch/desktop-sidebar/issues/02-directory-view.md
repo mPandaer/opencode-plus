@@ -10,6 +10,8 @@
 
 已完成实现并集成至 `desktop-directory-groups` (`35f58e5db0`)，最终独立核对通过。以下为历史阶段证据；最终结果及未完成的实机验收以 [acceptance.md](../acceptance.md) 为准，未勾选项不表示已人工验收。
 
+2026-11-09：用户选择 A「安静目录树」作为正式侧边栏方向；方案、原型存档和验证记录见 [sidebar-a-decision.md](../sidebar-a-decision.md)。
+
 ## Implementation evidence
 
 - Implementation `d4a6576958`, branch tip `7f0eb43fed` after clean integration96281dcc99 merge; independently fast-forward integrated at7f0eb43fed; main app units2583/0, app types and full root check32/32 passed; Windows workaround restored.

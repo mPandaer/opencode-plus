@@ -55,9 +55,13 @@ export function DirectoryAdd(props: {
     )
   return (
     <Menu placement="bottom-start">
-      <Menu.Trigger as={Button} variant="ghost-muted" size="small">
-        {language.t("sidebar.directory.add")}
-      </Menu.Trigger>
+      <Menu.Trigger
+        as={IconButton}
+        icon={<Icon name="plus" />}
+        variant="ghost-muted"
+        size="small"
+        aria-label={language.t("sidebar.directory.add")}
+      />
       <Menu.Portal>
         <Menu.Content>
           <Menu.Item onSelect={() => pick()}>{language.t("sidebar.directory.choose")}</Menu.Item>

@@ -1,8 +1,21 @@
-import { batch, createEffect, createMemo, For, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js"
+import {
+  batch,
+  createEffect,
+  createMemo,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+  type Accessor,
+  type JSX,
+} from "solid-js"
 import { Key } from "@solid-primitives/keyed"
 import { DragDropProvider, PointerSensor } from "@dnd-kit/solid"
 import { isSortable, useSortable } from "@dnd-kit/solid/sortable"
 import { Accessibility, Feedback, PointerActivationConstraints } from "@dnd-kit/dom"
+import { CollisionPriority, CollisionType } from "@dnd-kit/abstract"
+import { OptimisticSortingPlugin } from "@dnd-kit/dom/sortable"
 import { RestrictToVerticalAxis } from "@dnd-kit/abstract/modifiers"
 import { arrayMove } from "@/runtime/array-move"
 import { createStore } from "solid-js/store"
@@ -26,6 +39,7 @@ import { pathKey } from "@/workspaces/path-key"
 import { ProjectSessionRow } from "./project-session-row"
 import { DirectoryAdd } from "./directory-add"
 import { createSidebarSessionActivity, mergeSidebarSessions } from "./sidebar-sessions"
+import "./sidebar-directories.css"
 
 export function SidebarDirectories(props: {
   currentTab: Tab | undefined
@@ -263,15 +277,16 @@ function DirectorySidebar(props: {
       >
         {(handle) => (
           <>
-            <div role="group" aria-label={directory} class="mb-2 flex min-w-0 flex-col gap-[3px]">
-              <div class="flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1 text-13-medium text-v2-text-text-muted">
+            <div role="group" aria-label={directory} class="sidebar-directory mb-2 flex min-w-0 flex-col gap-[3px]">
+              <div class="sidebar-directory-heading flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1 text-13-medium text-v2-text-text-muted">
                 {handle}
                 <button
                   type="button"
                   aria-label={language.t("sidebar.directory.fold", { directory })}
                   aria-expanded={!state.collapsed?.includes(pathKey(directory))}
                   onClick={() => toggle("collapsed", pathKey(directory))}
-                  class="flex min-w-0 flex-1 items-center gap-2 text-start rounded-[6px] focus-visible:outline focus-visible:outline-1"
+                  title={directory}
+                  class="sidebar-directory-fold flex min-w-0 flex-1 items-center gap-2 text-start rounded-[6px] focus-visible:outline focus-visible:outline-1"
                 >
                   <Icon
                     name="fill-triangle-down"
@@ -283,13 +298,6 @@ function DirectorySidebar(props: {
                     <div class="truncate">
                       {directory.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? directory}
                     </div>
-                    <div class="truncate font-mono text-11-regular text-v2-text-text-faint">{directory}</div>
-                    <Show when={isLocationNotFoundError(availability.error)}>
-                      <div role="status">{language.t("sidebar.directory.unavailable")}</div>
-                      <Button variant="ghost-muted" size="small" onClick={() => void availability.refetch()}>
-                        {language.t("common.retry")}
-                      </Button>
-                    </Show>
                   </div>
                 </button>
                 <IconButton
@@ -323,6 +331,14 @@ function DirectorySidebar(props: {
                   </Menu.Portal>
                 </Menu>
               </div>
+              <Show when={isLocationNotFoundError(availability.error)}>
+                <div class="sidebar-directory-error flex items-center gap-2 ps-8 text-12-regular text-v2-text-text-muted">
+                  <span role="status">{language.t("sidebar.directory.unavailable")}</span>
+                  <Button variant="ghost-muted" size="small" onClick={() => void availability.refetch()}>
+                    {language.t("common.retry")}
+                  </Button>
+                </div>
+              </Show>
               <Show when={!state.collapsed?.includes(pathKey(directory))}>
                 <For
                   each={(visibleSessions().get(pathKey(directory)) ?? []).slice(
@@ -377,36 +393,38 @@ function DirectorySidebar(props: {
 
   return (
     <Show when={enabled() && ready()} fallback={props.fallback()}>
-      <div class="flex min-h-0 flex-1 flex-col gap-2">
-        <Menu placement="bottom-start">
-          <Menu.Trigger
-            as={Button}
-            variant="ghost-muted"
-            size="small"
-            aria-label={language.t("sidebar.directory.view")}
-          >
-            {language.t(
-              state.view === "list"
-                ? "sidebar.directory.flat"
-                : state.view === "projects"
-                  ? "sidebar.directory.projects"
-                  : "sidebar.directory.directories",
-            )}
-            <Icon name="fill-triangle-down" size="small" />
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Content>
-              <Menu.Item onSelect={() => setState("view", "directories")}>
-                {language.t("sidebar.directory.directories")}
-              </Menu.Item>
-              <Menu.Item onSelect={() => setState("view", "projects")}>
-                {language.t("sidebar.directory.projects")}
-              </Menu.Item>
-              <Menu.Item onSelect={() => setState("view", "list")}>{language.t("sidebar.directory.flat")}</Menu.Item>
-            </Menu.Content>
-          </Menu.Portal>
-        </Menu>
-        <DirectoryAdd ctx={props.ctx} onAdd={props.ctx.directories.add} />
+      <div class="sidebar-directories flex min-h-0 flex-1 flex-col gap-3">
+        <div class="flex h-8 shrink-0 items-center justify-between gap-1 px-1">
+          <Menu placement="bottom-start">
+            <Menu.Trigger
+              as={Button}
+              variant="ghost-muted"
+              size="small"
+              aria-label={language.t("sidebar.directory.view")}
+            >
+              {language.t(
+                state.view === "list"
+                  ? "sidebar.directory.flat"
+                  : state.view === "projects"
+                    ? "sidebar.directory.projects"
+                    : "sidebar.directory.directories",
+              )}
+              <Icon name="fill-triangle-down" size="small" />
+            </Menu.Trigger>
+            <Menu.Portal>
+              <Menu.Content>
+                <Menu.Item onSelect={() => setState("view", "directories")}>
+                  {language.t("sidebar.directory.directories")}
+                </Menu.Item>
+                <Menu.Item onSelect={() => setState("view", "projects")}>
+                  {language.t("sidebar.directory.projects")}
+                </Menu.Item>
+                <Menu.Item onSelect={() => setState("view", "list")}>{language.t("sidebar.directory.flat")}</Menu.Item>
+              </Menu.Content>
+            </Menu.Portal>
+          </Menu>
+          <DirectoryAdd ctx={props.ctx} onAdd={props.ctx.directories.add} />
+        </div>
         <Show
           when={state.view !== "list"}
           fallback={props.children(
@@ -414,7 +432,7 @@ function DirectorySidebar(props: {
             () => undefined,
           )}
         >
-          <div class="flex flex-col gap-1 px-1">
+          <div class="sidebar-directory-search flex items-center gap-1 px-1">
             <TextField
               type="search"
               label={language.t("sidebar.directory.search")}
@@ -423,11 +441,15 @@ function DirectorySidebar(props: {
               value={local.search}
               onChange={(search) => setLocal("search", search)}
             />
-            <div class="flex items-center gap-1">
-              <Menu placement="bottom-start">
-                <Menu.Trigger as={Button} variant="ghost-muted" size="small">
-                  {language.t("sidebar.directory.filter")}
-                </Menu.Trigger>
+            <div class="flex shrink-0 items-center gap-1">
+              <Menu placement="bottom-end">
+                <Menu.Trigger
+                  as={IconButton}
+                  icon={<Icon name="sliders" />}
+                  variant="ghost-muted"
+                  size="small"
+                  aria-label={language.t("sidebar.directory.filter")}
+                />
                 <Menu.Portal>
                   <Menu.Content>
                     <MenuScroll class="max-h-80">
@@ -469,13 +491,13 @@ function DirectorySidebar(props: {
                   </Menu.Content>
                 </Menu.Portal>
               </Menu>
-              <Show when={local.search || local.projects.length || local.directories.length}>
-                <Button variant="ghost-muted" size="small" onClick={clearFilters}>
-                  {language.t("sidebar.directory.clearFilters")}
-                </Button>
-              </Show>
             </div>
           </div>
+          <Show when={local.search || local.projects.length || local.directories.length}>
+            <Button variant="ghost-muted" size="small" class="mx-1 self-start" onClick={clearFilters}>
+              {language.t("sidebar.directory.clearFilters")}
+            </Button>
+          </Show>
           <div data-scrollable class="min-h-0 flex-1 overflow-y-auto">
             <Show when={history.isPending}>
               <Loader />
@@ -598,8 +620,9 @@ function SortableList(props: {
       ]}
       onDragEnd={(event) => {
         const source = event.operation.source
-        if (event.canceled || !isSortable(source) || source.initialIndex === source.index) return
-        props.onReorder(arrayMove(props.items, source.initialIndex, source.index))
+        const target = event.operation.target
+        if (event.canceled || !isSortable(source) || !isSortable(target) || source.id === target.id) return
+        props.onReorder(arrayMove(props.items, source.initialIndex, target.index))
       }}
     >
       <For each={props.items}>{props.children}</For>
@@ -614,6 +637,18 @@ function SortableGroup(props: {
   children: (handle: JSX.Element) => JSX.Element
 }) {
   const sortable = useSortable({
+    // Solid owns the group order; optimistic DOM moves would be applied a second time on drop.
+    plugins: (defaults) => defaults.filter((plugin) => plugin !== OptimisticSortingPlugin),
+    // Group contents can be much taller than their headings; never collide with that dragged content.
+    collisionDetector: ({ dragOperation, droppable }) => {
+      if (!droppable.shape?.containsPoint(dragOperation.position.current)) return null
+      return {
+        id: droppable.id,
+        value: 1,
+        type: CollisionType.PointerIntersection,
+        priority: CollisionPriority.High,
+      }
+    },
     get id() {
       return props.id
     },
@@ -627,7 +662,7 @@ function SortableGroup(props: {
         <button
           ref={(element) => {
             sortable.handleRef(element)
-            sortable.targetRef(element)
+            onMount(() => sortable.targetRef(element.parentElement!))
           }}
           type="button"
           aria-label={props.reorderLabel}

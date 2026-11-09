@@ -1,4 +1,4 @@
-import { Navigate, useSearchParams } from "@solidjs/router"
+import { Navigate, useLocation } from "@solidjs/router"
 import { createMemo, ErrorBoundary, Show, type ParentProps } from "solid-js"
 import { CommentsProvider } from "@/composer/comments"
 import { FileProvider } from "@/workspaces/files/model"
@@ -17,12 +17,15 @@ import { ErrorPage } from "@/shell/errors/error"
 import { SessionPanelFrame, SessionRouteFrame } from "@/session/session-frame"
 
 export function DraftRoute() {
-  const [search] = useSearchParams<{ draftId?: string }>()
+  const loc = useLocation()
   const tabs = useTabs()
+  // Read the location's search string rather than the router's per-key query proxy: the proxy can still
+  // hold the previous location's keys during the render that first mounts this route.
+  const draftID = () => new URLSearchParams(loc.search).get("draftId") ?? undefined
 
   return (
     <Show
-      when={tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === search.draftId)}
+      when={tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === draftID())}
       keyed
       fallback={tabs.ready() && <Navigate href="/" />}
     >

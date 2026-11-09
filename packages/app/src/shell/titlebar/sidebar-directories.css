@@ -1,0 +1,89 @@
+.sidebar-directory-search > :first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.sidebar-directory-search > :last-child {
+  flex: none;
+}
+
+.sidebar-directory {
+  position: relative;
+  margin-bottom: 18px;
+}
+
+.sidebar-directory-heading {
+  position: relative;
+  height: 32px;
+  padding: 0 4px;
+  gap: 4px;
+}
+
+.sidebar-directory-fold {
+  min-width: 0;
+  height: 32px;
+  gap: 6px;
+  padding-inline-start: 0;
+}
+
+.sidebar-directory-fold > svg:first-child {
+  width: 10px;
+}
+
+.sidebar-directory-fold > div {
+  text-align: start;
+}
+
+/* The drag handle sits at the row start, above the fold label it overlaps. */
+.sidebar-directory-heading > button:first-child {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 8px;
+  z-index: 1;
+}
+
+.sidebar-directory::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 23px;
+  top: 35px;
+  bottom: 2px;
+  width: 1px;
+  background: var(--v2-border-border-muted);
+  pointer-events: none;
+}
+
+.sidebar-directory:has(> .sidebar-directory-heading > .sidebar-directory-fold[aria-expanded="false"])::before {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  /* Actions keep fixed hit targets at the row end; only the quiet label reclaims the width. */
+  .sidebar-directory-heading > button:not(.sidebar-directory-fold) {
+    position: absolute;
+    z-index: 1;
+    opacity: 0;
+  }
+
+  .sidebar-directory-heading > button[data-component="icon-button-v2"] {
+    inset-inline-end: 28px;
+  }
+
+  .sidebar-directory-heading > button[data-component="icon-button-v2"]:last-child {
+    inset-inline-end: 4px;
+  }
+
+  .sidebar-directory-heading:is(:hover, :focus-within, :has([data-state="open"]))
+    > button:not(.sidebar-directory-fold) {
+    opacity: 1;
+  }
+
+  .sidebar-directory-fold {
+    padding-inline-end: 52px;
+  }
+
+  .sidebar-directory-heading:not(:hover):not(:focus-within):not(:has([data-state="open"]))
+    .sidebar-directory-fold {
+    padding-inline-end: 0;
+  }
+}

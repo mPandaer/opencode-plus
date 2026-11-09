@@ -7,6 +7,7 @@ import {
   newSessionLocation,
   newSessionWorktree,
   openDraft,
+  mockWorkspace,
   openSession,
   openWorktreeDraft,
   type WorkspaceInput,
@@ -52,6 +53,108 @@ test.use({
   serviceWorkers: "block",
   viewport: { width: 1280, height: 900 },
   permissions: ["clipboard-read", "clipboard-write"],
+})
+
+test("global new on first use requires a directory and cancellation leaves Home unchanged", async ({ page }) => {
+  const created: unknown[] = []
+  await mockWorkspace(page, {
+    name: "FirstGlobalDirectory",
+    sessions: [],
+    fileList: () => [],
+    onSessionCreate: (body) => void created.push(body.location),
+  })
+  await page.goto("/")
+  await page.keyboard.press("Control+n")
+  const picker = page.getByRole("dialog")
+  await expect(picker.getByRole("combobox")).toBeEditable()
+  await page.keyboard.press("Escape")
+  await expect(picker).toHaveCount(0)
+  await expect(page).toHaveURL("/")
+  expect(created).toEqual([])
+  await page.keyboard.press("Control+n")
+  const input = picker.getByRole("combobox")
+  await expect(input).toBeEditable()
+  await input.fill("C:/OpenCode/FirstGlobalDirectory/module-a")
+  await input.press("Enter")
+  await picker.getByRole("button", { name: "Select folder", exact: true }).click()
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(
+    /C:[\\/]OpenCode[\\/]FirstGlobalDirectory[\\/]module-a/,
+  )
+  await editor(page).fill("Work in the selected module")
+  await submit(page).click()
+  await expect
+    .poll(() => created)
+    .toEqual([{ directory: expect.stringMatching(/C:[\\/]OpenCode[\\/]FirstGlobalDirectory[\\/]module-a/) }])
+})
+
+test("global new prefers the current session, then remembers the submitted directory across Home settings and reload", async ({
+  page,
+}) => {
+  const root = "C:/OpenCode/GlobalModules"
+  const created: unknown[] = []
+  const view = await openSession(page, {
+    name: "GlobalModules",
+    directory: `${root}/module-a`,
+    project: { worktree: root, canonical: root },
+    fileList: () => [],
+    onSessionCreate: (body) => void created.push(body.location),
+    seed: { storage: { "opencode.global.dat:working-directory": { last: `${root}/older-module` } } },
+  })
+  await view.editor.press("Control+n")
+  const path = page.locator('[data-slot="new-session-location-path"]')
+  await expect(path).toHaveText(`${root}/module-a`)
+  await page.getByRole("button", { name: "Change working directory", exact: true }).click()
+  const picker = page.getByRole("dialog")
+  const input = picker.getByRole("combobox")
+  await expect(input).toBeEditable()
+  await input.fill(`${root}/module-b`)
+  await input.press("Enter")
+  await picker.getByRole("button", { name: "Select folder", exact: true }).click()
+  await expect(path).toHaveText(/C:[\\/]OpenCode[\\/]GlobalModules[\\/]module-b/)
+  await editor(page).fill("Use module B")
+  await submit(page).click()
+  await expect
+    .poll(() => created)
+    .toEqual([{ directory: expect.stringMatching(/C:[\\/]OpenCode[\\/]GlobalModules[\\/]module-b/) }])
+  await expect(editor(page)).toBeEditable()
+  await page.getByRole("button", { name: "Home", exact: true }).click()
+  await expect(page).toHaveURL("/")
+  await page.reload()
+  await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible()
+  await page.keyboard.press("Control+n")
+  await expect(path).toHaveText(/C:[\\/]OpenCode[\\/]GlobalModules[\\/]module-b/)
+  await editor(page).press("Control+,")
+  await expect(page.getByTestId("settings-screen")).toBeVisible()
+  await page.keyboard.press("Control+n")
+  await expect(path).toHaveText(/C:[\\/]OpenCode[\\/]GlobalModules[\\/]module-b/)
+  await editor(page).fill("Continue in module B")
+  await submit(page).click()
+  await expect
+    .poll(() => created)
+    .toEqual([
+      { directory: expect.stringMatching(/C:[\\/]OpenCode[\\/]GlobalModules[\\/]module-b/) },
+      { directory: expect.stringMatching(/C:[\\/]OpenCode[\\/]GlobalModules[\\/]module-b/) },
+    ])
+})
+
+test("global new retains the legacy project default when working directories are disabled", async ({ page }) => {
+  const root = "C:/OpenCode/LegacyGlobal"
+  const created: unknown[] = []
+  await mockWorkspace(page, {
+    name: "LegacyGlobal",
+    sessions: [],
+    flags: { working_directories: false },
+    onSessionCreate: (body) => void created.push(body.location),
+    seed: { storage: { "opencode.global.dat:working-directory": { last: `${root}/module-a` } } },
+  })
+  await page.goto("/")
+  await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible()
+  await page.keyboard.press("Control+n")
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(root)
+  await expect(page.getByRole("button", { name: "Change working directory", exact: true })).toHaveCount(0)
+  await editor(page).fill("Use the legacy default")
+  await submit(page).click()
+  await expect.poll(() => created).toEqual([{ directory: root }])
 })
 
 test("the new session screen does not show session details", async ({ page }) => {

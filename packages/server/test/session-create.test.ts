@@ -1,6 +1,8 @@
 import { expect } from "bun:test"
 import { Session } from "@opencode/schema/session"
-import { Effect, Schema, Schedule } from "effect"
+import { Effect, Layer, Schema, Schedule } from "effect"
+import { rgPath } from "@vscode/ripgrep"
+import { RipgrepBinary } from "@opencode/core/ripgrep/binary"
 import { it } from "../../core/test/lib/effect"
 import { ServerFetch } from "../src/fetch"
 import path from "node:path"
@@ -24,13 +26,21 @@ it.live(
         await Bun.write(path.join(root, "module-a", "alpha-only.txt"), "alpha")
         await Bun.write(path.join(root, "module-b", "beta-only.txt"), "beta")
       })
-      const handler = yield* ServerFetch.make({
-        app: { version: "test" },
-        database: { path: ":memory:" },
-        models: { fetch: false },
-        config: { directory: path.join(tmp.path, "config") },
-        fs: { filewatcher: false },
-      })
+      const handler = yield* ServerFetch.make(
+        {
+          app: { version: "test" },
+          database: { path: ":memory:" },
+          models: { fetch: false },
+          config: { directory: path.join(tmp.path, "config") },
+          fs: { filewatcher: false },
+        },
+        {
+          // Use the installed host binary: the production resolver may download rg on a clean machine.
+          overrides: [
+            RipgrepBinary.node.replace(Layer.succeed(RipgrepBinary.Service, { filepath: Effect.succeed(rgPath) })),
+          ],
+        },
+      )
       const request = (route: string, directory: string, body?: unknown) =>
         Effect.promise(async () => {
           const url = new URL(route, "http://opencode.local")
@@ -83,6 +93,8 @@ it.live(
       const diff = yield* request("/api/vcs/diff?mode=working", module)
       expect(diff.data).toEqual(expect.arrayContaining([expect.objectContaining({ file: "module-a/alpha-only.txt" })]))
     }).pipe(Effect.provideService(Flag.Overrides, "working_directories"), Effect.scoped),
+  // Real Git processes, three Location graphs, persisted Sessions, and filesystem/VCS requests exceed 5s on Windows.
+  { timeout: 15_000 },
 )
 
 const SessionResponse = Schema.Struct({ data: Schema.toEncoded(Session.Info) })

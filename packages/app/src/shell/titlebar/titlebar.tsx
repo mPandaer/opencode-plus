@@ -24,6 +24,9 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
 import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/shell/titlebar/session-events"
 import { useGlobal } from "@/runtime/server/runtime"
+import { useDirectoryPicker } from "@/workspaces/selection/picker"
+import { showToast } from "@/shell/notifications/toast"
+import { formatServerError } from "@/runtime/server/errors"
 import { ServerConnection } from "@/runtime/server/registry"
 import { tabKey, useTabs } from "@/shell/tabs/tabs"
 import type { ComposerState } from "@/composer/persistence"
@@ -202,6 +205,7 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
             const global = useGlobal()
 
             const tabs = useTabs()
+            const pickDirectory = useDirectoryPicker()
             const tabsStore = tabs.store
 
             createEffect(() => {
@@ -255,7 +259,12 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
 
                   const model = tabs.stateValue<ComposerState>(sessionTab, "prompt")?.model.current()
                   void tabs.newDraft(
-                    { server: sessionTab.server, directory: activeSession.location.directory, draftID },
+                    {
+                      server: sessionTab.server,
+                      directory: activeSession.location.directory,
+                      draftID,
+                      worktree: "main",
+                    },
                     "",
                     model,
                   )
@@ -284,20 +293,46 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                     global.servers.list().find((item) => ServerConnection.key(item) === selection.server) ??
                     global.servers.list()[0]
 
-                  const projects = conn ? global.serverCtx(ServerConnection.key(conn))?.projects : undefined
+                  if (!conn) return false
+                  const server = ServerConnection.key(conn)
+                  const ctx = global.serverCtx(server)
+                  if (!ctx) return false
 
-                  const project =
-                    projects?.list().find((item) => item.worktree === selection.directory) ??
-                    projects?.last() ??
-                    projects?.list()[0]
-
-                  if (conn && project) {
-                    void tabs.newDraft({ server: ServerConnection.key(conn), directory: project.worktree, draftID }, "")
-
-                    return true
-                  }
-
-                  return false
+                  void ctx.sdk.api.location
+                    .get()
+                    .then(async (location) => {
+                      await ctx.workingDirectory.ready.promise
+                      if (location.experimental?.flags.working_directories === true) {
+                        const directory = ctx.workingDirectory.last()
+                        if (directory) {
+                          void tabs.newDraft({ server, directory, draftID, worktree: "main" }, "")
+                          return
+                        }
+                        pickDirectory({
+                          server: conn,
+                          title: language.t("session.new.directory.change"),
+                          onSelect: (result) => {
+                            const directory = Array.isArray(result) ? result[0] : result
+                            if (!directory) return
+                            void tabs.newDraft({ server, directory, draftID, worktree: "main" }, "")
+                          },
+                        })
+                        return
+                      }
+                      const project =
+                        ctx.projects.list().find((item) => item.worktree === selection.directory) ??
+                        ctx.projects.last() ??
+                        ctx.projects.list()[0]
+                      if (project) void tabs.newDraft({ server, directory: project.worktree, draftID }, "")
+                    })
+                    .catch((error) =>
+                      showToast({
+                        variant: "error",
+                        title: language.t("common.requestFailed"),
+                        description: formatServerError(error, language.t),
+                      }),
+                    )
+                  return true
                 }
               }
             }

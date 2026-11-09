@@ -1,6 +1,11 @@
 import { Schema } from "effect"
 import { createEffect, createMemo, For, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js"
 import { Key } from "@solid-primitives/keyed"
+import { DragDropProvider, PointerSensor } from "@dnd-kit/solid"
+import { isSortable, useSortable } from "@dnd-kit/solid/sortable"
+import { Accessibility, Feedback, PointerActivationConstraints } from "@dnd-kit/dom"
+import { RestrictToVerticalAxis } from "@dnd-kit/abstract/modifiers"
+import { arrayMove } from "@/runtime/array-move"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { Button } from "@opencode/ui/button"
@@ -25,6 +30,10 @@ import { createSidebarSessionActivity, mergeSidebarSessions } from "./sidebar-se
 
 const DirectoryState = Persistence.struct({
   directories: Schema.mutable(Schema.Array(Schema.String)),
+  directoryOrder: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
+  projectOrder: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
+  collapsed: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
+  collapsedProjects: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
   view: Persistence.optional(Schema.Literals(["directories", "projects", "list"])),
 })
 
@@ -116,21 +125,55 @@ function DirectorySidebar(props: {
       .toSorted((a, b) => b.time.updated - a.time.updated),
   )
   const grouped = createMemo(() => Map.groupBy(sessions(), (session) => pathKey(session.location.directory)))
+  const directories = createMemo(() =>
+    state.directories.toSorted(
+      (a, b) => (state.directoryOrder?.indexOf(pathKey(a)) ?? -1) - (state.directoryOrder?.indexOf(pathKey(b)) ?? -1),
+    ),
+  )
   const projects = createMemo(() => {
-    const entries = state.directories.map((directory) => {
+    const entries = directories().map((directory) => {
       const session = grouped().get(pathKey(directory))?.[0]
       const project = session ? props.ctx.projects.forSession(session) : props.ctx.projects.forDirectory(directory)
       return { directory, project: project?.vcs === "git" ? project : undefined }
     })
     return Array.from(
       Map.groupBy(entries, (entry) => entry.project?.id ?? pathKey(entry.directory)),
-      ([, entries]) => ({
+      ([key, entries]) => ({
+        key,
         project: entries[0].project,
         name: entries[0].project ? entries[0].project.name || entries[0].project.worktree : entries[0].directory,
         directories: entries.map((entry) => entry.directory),
       }),
     )
   })
+
+  createEffect(() => {
+    if (!ready() || !enabled()) return
+    const added = state.directories.map(pathKey).filter((key) => !state.directoryOrder?.includes(key))
+    if (added.length) untrack(() => setState("directoryOrder", (items) => [...(items ?? []), ...added]))
+  })
+  createEffect(() => {
+    if (!ready() || !enabled()) return
+    const added = projects()
+      .map((project) => project.key)
+      .filter((key) => !state.projectOrder?.includes(key))
+    if (added.length) untrack(() => setState("projectOrder", (items) => [...(items ?? []), ...added]))
+  })
+  const orderedProjects = createMemo(() =>
+    projects().toSorted(
+      (a, b) => (state.projectOrder?.indexOf(a.key) ?? -1) - (state.projectOrder?.indexOf(b.key) ?? -1),
+    ),
+  )
+  const toggle = (field: "collapsed" | "collapsedProjects", key: string) =>
+    setState(field, (items) => (items?.includes(key) ? items.filter((item) => item !== key) : [...(items ?? []), key]))
+  const reorderDirectories = (items: string[]) => {
+    const keys = items.map(pathKey)
+    const selected = new Set<string>(keys)
+    const positions = (state.directoryOrder ?? []).filter((key) => selected.has(key))
+    setState("directoryOrder", (order) =>
+      (order ?? []).map((key) => (selected.has(key) ? keys[positions.indexOf(key)] : key)),
+    )
+  }
 
   onCleanup(props.ctx.data.listen(({ details }) => activity.update(server, details)))
   createEffect(() => {
@@ -149,55 +192,87 @@ function DirectorySidebar(props: {
     if (!state.directories.some((item) => pathKey(item) === pathKey(directory)))
       setState("directories", (items) => [...items, directory])
   }
-  const directoryRow = (directory: string) => (
-    <div role="group" aria-label={directory} class="mb-2 flex min-w-0 flex-col gap-[3px]">
-      <div class="flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1 text-13-medium text-v2-text-text-muted">
-        <Icon name="folder" size="small" />
-        <div class="min-w-0 flex-1" title={directory}>
-          <div class="truncate">{directory.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? directory}</div>
-          <div class="truncate font-mono text-11-regular text-v2-text-text-faint">{directory}</div>
-        </div>
-        <IconButton
-          icon={<Icon name="plus" />}
-          variant="ghost-muted"
-          size="small"
-          aria-label={language.t("sidebar.directory.new", { directory })}
-          onClick={() => void tabs.newDraft({ server, directory, worktree: "main" })}
-        />
-      </div>
-      <For
-        each={(grouped().get(pathKey(directory)) ?? []).slice(0, local.limits[pathKey(directory)] ?? 5)}
-        fallback={
-          <div class="ps-8 py-2 text-12-regular text-v2-text-text-faint">{language.t("sidebar.organize.empty")}</div>
-        }
-      >
-        {(session) => (
-          <ProjectSessionRow
-            server={server}
-            session={session}
-            openTab={tabs.store.some(
-              (tab) => tab.type === "session" && tab.server === server && tab.sessionId === session.id,
-            )}
-            active={
-              props.currentTab?.type === "session" &&
-              props.currentTab.server === server &&
-              props.currentTab.sessionId === session.id
-            }
-            onOpen={() => actions.openProjectSession(props.ctx.sdk.server, directory, session, { preview: true })}
-          />
-        )}
-      </For>
-      <Show when={(grouped().get(pathKey(directory))?.length ?? 0) > (local.limits[pathKey(directory)] ?? 5)}>
-        <Button
-          variant="ghost-muted"
-          size="small"
-          class="ms-[23px] self-start"
-          onClick={() => setLocal("limits", pathKey(directory), (value) => (value ?? 5) + 5)}
-        >
-          {language.t("sidebar.organize.showMore")}
-        </Button>
-      </Show>
-    </div>
+  const directoryRow = (directory: string, index: Accessor<number>) => (
+    <SortableGroup
+      id={pathKey(directory)}
+      index={index()}
+      reorderLabel={language.t("sidebar.directory.reorder", { directory })}
+    >
+      {(handle) => (
+        <>
+          <div role="group" aria-label={directory} class="mb-2 flex min-w-0 flex-col gap-[3px]">
+            <div class="flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1 text-13-medium text-v2-text-text-muted">
+              {handle}
+              <button
+                type="button"
+                aria-label={language.t("sidebar.directory.fold", { directory })}
+                aria-expanded={!state.collapsed?.includes(pathKey(directory))}
+                onClick={() => toggle("collapsed", pathKey(directory))}
+                class="flex min-w-0 flex-1 items-center gap-2 text-start rounded-[6px] focus-visible:outline focus-visible:outline-1"
+              >
+                <Icon
+                  name="fill-triangle-down"
+                  size="small"
+                  classList={{ "-rotate-90": state.collapsed?.includes(pathKey(directory)) }}
+                />
+                <Icon name="folder" size="small" />
+                <div class="min-w-0 flex-1" title={directory}>
+                  <div class="truncate">
+                    {directory.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? directory}
+                  </div>
+                  <div class="truncate font-mono text-11-regular text-v2-text-text-faint">{directory}</div>
+                </div>
+              </button>
+              <IconButton
+                icon={<Icon name="plus" />}
+                variant="ghost-muted"
+                size="small"
+                aria-label={language.t("sidebar.directory.new", { directory })}
+                onClick={() => void tabs.newDraft({ server, directory, worktree: "main" })}
+              />
+            </div>
+            <Show when={!state.collapsed?.includes(pathKey(directory))}>
+              <For
+                each={(grouped().get(pathKey(directory)) ?? []).slice(0, local.limits[pathKey(directory)] ?? 5)}
+                fallback={
+                  <div class="ps-8 py-2 text-12-regular text-v2-text-text-faint">
+                    {language.t("sidebar.organize.empty")}
+                  </div>
+                }
+              >
+                {(session) => (
+                  <ProjectSessionRow
+                    server={server}
+                    session={session}
+                    openTab={tabs.store.some(
+                      (tab) => tab.type === "session" && tab.server === server && tab.sessionId === session.id,
+                    )}
+                    active={
+                      props.currentTab?.type === "session" &&
+                      props.currentTab.server === server &&
+                      props.currentTab.sessionId === session.id
+                    }
+                    onOpen={() =>
+                      actions.openProjectSession(props.ctx.sdk.server, directory, session, { preview: true })
+                    }
+                  />
+                )}
+              </For>
+              <Show when={(grouped().get(pathKey(directory))?.length ?? 0) > (local.limits[pathKey(directory)] ?? 5)}>
+                <Button
+                  variant="ghost-muted"
+                  size="small"
+                  class="ms-[23px] self-start"
+                  onClick={() => setLocal("limits", pathKey(directory), (value) => (value ?? 5) + 5)}
+                >
+                  {language.t("sidebar.organize.showMore")}
+                </Button>
+              </Show>
+            </Show>
+          </div>
+        </>
+      )}
+    </SortableGroup>
   )
 
   return (
@@ -254,36 +329,82 @@ function DirectorySidebar(props: {
                 {language.t("common.retry")}
               </Button>
             </Show>
-            <Show when={state.view === "projects"} fallback={<For each={state.directories}>{directoryRow}</For>}>
-              <For each={projects()}>
-                {(project) => (
-                  <div
-                    role="group"
-                    aria-label={language.t("sidebar.directory.projectGroup", { project: project.name })}
-                    class="mb-3 min-w-0"
-                  >
-                    <div class="flex min-w-0 items-center gap-2 px-2 py-1 text-13-medium text-v2-text-text-muted">
-                      <Show when={project.project} fallback={<Icon name="folder" size="small" />}>
-                        {(value) => <ProjectIcon project={value()} />}
-                      </Show>
-                      <div class="min-w-0 flex-1 truncate" title={project.project?.worktree ?? project.name}>
-                        {project.name}
-                      </div>
-                      <DirectoryAdd
-                        ctx={props.ctx}
-                        project={project.project ?? { name: project.name, worktree: project.name, sandboxes: [] }}
-                        onAdd={(directory) => {
-                          addDirectory(directory)
-                          void tabs.newDraft({ server, directory, worktree: "main" })
-                        }}
-                      />
-                    </div>
-                    <div class="ms-3 border-s border-v2-border-base ps-1">
-                      <For each={project.directories}>{directoryRow}</For>
-                    </div>
-                  </div>
-                )}
-              </For>
+            <Show
+              when={state.view === "projects"}
+              fallback={
+                <SortableList items={directories()} onReorder={reorderDirectories}>
+                  {directoryRow}
+                </SortableList>
+              }
+            >
+              <SortableList
+                items={orderedProjects().map((project) => project.key)}
+                onReorder={(keys) => setState("projectOrder", keys)}
+              >
+                {(key, index) => {
+                  const project = () => orderedProjects().find((item) => item.key === key)!
+                  return (
+                    <SortableGroup
+                      id={key}
+                      index={index()}
+                      reorderLabel={language.t("sidebar.directory.projectReorder", { project: project().name })}
+                    >
+                      {(handle) => (
+                        <>
+                          <div
+                            role="group"
+                            aria-label={language.t("sidebar.directory.projectGroup", { project: project().name })}
+                            class="mb-3 min-w-0"
+                          >
+                            <div class="flex min-w-0 items-center gap-2 px-2 py-1 text-13-medium text-v2-text-text-muted">
+                              {handle}
+                              <button
+                                type="button"
+                                aria-label={language.t("sidebar.directory.projectFold", { project: project().name })}
+                                aria-expanded={!state.collapsedProjects?.includes(key)}
+                                onClick={() => toggle("collapsedProjects", key)}
+                                class="flex min-w-0 flex-1 items-center gap-2 text-start rounded-[6px] focus-visible:outline focus-visible:outline-1"
+                              >
+                                <Icon
+                                  name="fill-triangle-down"
+                                  size="small"
+                                  classList={{ "-rotate-90": state.collapsedProjects?.includes(key) }}
+                                />
+                                <Show when={project().project} fallback={<Icon name="folder" size="small" />}>
+                                  {(value) => <ProjectIcon project={value()} />}
+                                </Show>
+                                <div
+                                  class="min-w-0 flex-1 truncate"
+                                  title={project().project?.worktree ?? project().name}
+                                >
+                                  {project().name}
+                                </div>
+                              </button>
+                              <DirectoryAdd
+                                ctx={props.ctx}
+                                project={
+                                  project().project ?? { name: project().name, worktree: project().name, sandboxes: [] }
+                                }
+                                onAdd={(directory) => {
+                                  addDirectory(directory)
+                                  void tabs.newDraft({ server, directory, worktree: "main" })
+                                }}
+                              />
+                            </div>
+                            <Show when={!state.collapsedProjects?.includes(key)}>
+                              <div class="ms-3 border-s border-v2-border-base ps-1">
+                                <SortableList items={project().directories} onReorder={reorderDirectories}>
+                                  {directoryRow}
+                                </SortableList>
+                              </div>
+                            </Show>
+                          </div>
+                        </>
+                      )}
+                    </SortableGroup>
+                  )
+                }}
+              </SortableList>
             </Show>
             {/* Keep tab shortcuts registered without duplicating session rows in the directory view. */}
             <div class="hidden">
@@ -296,5 +417,64 @@ function DirectorySidebar(props: {
         </Show>
       </div>
     </Show>
+  )
+}
+
+function SortableList(props: {
+  items: string[]
+  onReorder: (items: string[]) => void
+  children: (item: string, index: Accessor<number>) => JSX.Element
+}) {
+  return (
+    <DragDropProvider
+      sensors={[
+        PointerSensor.configure({ activationConstraints: [new PointerActivationConstraints.Distance({ value: 4 })] }),
+      ]}
+      modifiers={[RestrictToVerticalAxis]}
+      plugins={(defaults) => [
+        ...defaults.filter((plugin) => plugin !== Accessibility),
+        Feedback.configure({ dropAnimation: null }),
+      ]}
+      onDragEnd={(event) => {
+        const source = event.operation.source
+        if (event.canceled || !isSortable(source) || source.initialIndex === source.index) return
+        props.onReorder(arrayMove(props.items, source.initialIndex, source.index))
+      }}
+    >
+      <For each={props.items}>{props.children}</For>
+    </DragDropProvider>
+  )
+}
+
+function SortableGroup(props: {
+  id: string
+  index: number
+  reorderLabel: string
+  children: (handle: JSX.Element) => JSX.Element
+}) {
+  const sortable = useSortable({
+    get id() {
+      return props.id
+    },
+    get index() {
+      return props.index
+    },
+  })
+  return (
+    <div ref={sortable.ref} class="min-w-0">
+      {props.children(
+        <button
+          ref={(element) => {
+            sortable.handleRef(element)
+            sortable.targetRef(element)
+          }}
+          type="button"
+          aria-label={props.reorderLabel}
+          class="shrink-0 cursor-grab rounded-[4px] text-v2-text-text-faint hover:text-v2-text-text-base focus-visible:outline focus-visible:outline-1 active:cursor-grabbing"
+        >
+          <Icon name="menu" size="small" />
+        </button>,
+      )}
+    </div>
   )
 }

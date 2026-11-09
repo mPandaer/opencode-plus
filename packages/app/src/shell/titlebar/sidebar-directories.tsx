@@ -9,7 +9,7 @@ import { Menu } from "@opencode/ui/menu"
 import { Loader } from "@opencode/ui/loader"
 import { TextField } from "@opencode/ui/text-field"
 import { MenuScroll } from "@opencode/ui/menu-scroll"
-import type { SessionInfo } from "@opencode/client/promise"
+import { isLocationNotFoundError, type SessionInfo } from "@opencode/client/promise"
 import { useLanguage } from "@/runtime/i18n/language"
 import { ServerConnection, useServers } from "@/runtime/server/registry"
 import { useServerCtx, type ServerCtx } from "@/runtime/server/runtime"
@@ -213,82 +213,100 @@ function DirectorySidebar(props: {
   })
 
   const addDirectory = props.ctx.directories.add
-  const directoryRow = (directory: string) => (
-    <div role="group" aria-label={directory} class="mb-2 flex min-w-0 flex-col gap-[3px]">
-      <div class="flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1 text-13-medium text-v2-text-text-muted">
-        <Icon name="folder" size="small" />
-        <div class="min-w-0 flex-1" title={directory}>
-          <div class="truncate">{directory.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? directory}</div>
-          <div class="truncate font-mono text-11-regular text-v2-text-text-faint">{directory}</div>
-        </div>
-        <IconButton
-          icon={<Icon name="plus" />}
-          variant="ghost-muted"
-          size="small"
-          aria-label={language.t("sidebar.directory.new", { directory })}
-          onClick={() => void tabs.newDraft({ server, directory, worktree: "main" })}
-        />
-        <Menu placement="bottom-end">
-          <Menu.Trigger
-            as={IconButton}
-            icon={<Icon name="dot-grid" />}
+  const directoryRow = (directory: string) => {
+    const availability = useQuery(() => ({
+      queryKey: ["sidebar-directory-availability", props.ctx.sdk.scope, directory],
+      queryFn: ({ signal }) => props.ctx.sdk.api.location.get({ location: { directory } }, { signal }),
+      retry: false,
+      staleTime: 0,
+    }))
+    return (
+      <div role="group" aria-label={directory} class="mb-2 flex min-w-0 flex-col gap-[3px]">
+        <div class="flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1 text-13-medium text-v2-text-text-muted">
+          <Icon name="folder" size="small" />
+          <div class="min-w-0 flex-1" title={directory}>
+            <div class="truncate">{directory.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? directory}</div>
+            <div class="truncate font-mono text-11-regular text-v2-text-text-faint">{directory}</div>
+            <Show when={isLocationNotFoundError(availability.error)}>
+              <div role="status">{language.t("sidebar.directory.unavailable")}</div>
+              <Button variant="ghost-muted" size="small" onClick={() => void availability.refetch()}>
+                {language.t("common.retry")}
+              </Button>
+            </Show>
+          </div>
+          <IconButton
+            icon={<Icon name="plus" />}
             variant="ghost-muted"
             size="small"
-            aria-label={language.t("sidebar.directory.actions")}
+            aria-label={language.t("sidebar.directory.new", { directory })}
+            disabled={availability.isFetching || isLocationNotFoundError(availability.error)}
+            onClick={async () => {
+              const result = await availability.refetch()
+              if (result.isSuccess) await tabs.newDraft({ server, directory, worktree: "main" })
+            }}
           />
-          <Menu.Portal>
-            <Menu.Content>
-              <div class="max-w-56 px-2 py-1 text-12-regular text-v2-text-text-muted">
-                {language.t("sidebar.directory.kept")}
-              </div>
-              <Menu.Item
-                onSelect={() =>
-                  batch(() => {
-                    setState("closed", (items) => [...(items ?? []), directory])
-                    setState("directories", (items) => items.filter((item) => pathKey(item) !== pathKey(directory)))
-                  })
-                }
-              >
-                {language.t("sidebar.directory.close")}
-              </Menu.Item>
-            </Menu.Content>
-          </Menu.Portal>
-        </Menu>
-      </div>
-      <For
-        each={(visibleSessions().get(pathKey(directory)) ?? []).slice(0, local.limits[pathKey(directory)] ?? 5)}
-        fallback={
-          <div class="ps-8 py-2 text-12-regular text-v2-text-text-faint">{language.t("sidebar.organize.empty")}</div>
-        }
-      >
-        {(session) => (
-          <ProjectSessionRow
-            server={server}
-            session={session}
-            openTab={tabs.store.some(
-              (tab) => tab.type === "session" && tab.server === server && tab.sessionId === session.id,
-            )}
-            active={
-              props.currentTab?.type === "session" &&
-              props.currentTab.server === server &&
-              props.currentTab.sessionId === session.id
-            }
-            onOpen={() => actions.openProjectSession(props.ctx.sdk.server, directory, session, { preview: true })}
-          />
-        )}
-      </For>
-      <Show when={(visibleSessions().get(pathKey(directory))?.length ?? 0) > (local.limits[pathKey(directory)] ?? 5)}>
-        <Button
-          variant="ghost-muted"
-          size="small"
-          class="ms-[23px] self-start"
-          onClick={() => setLocal("limits", pathKey(directory), (value) => (value ?? 5) + 5)}
+          <Menu placement="bottom-end">
+            <Menu.Trigger
+              as={IconButton}
+              icon={<Icon name="dot-grid" />}
+              variant="ghost-muted"
+              size="small"
+              aria-label={language.t("sidebar.directory.actions")}
+            />
+            <Menu.Portal>
+              <Menu.Content>
+                <div class="max-w-56 px-2 py-1 text-12-regular text-v2-text-text-muted">
+                  {language.t("sidebar.directory.kept")}
+                </div>
+                <Menu.Item
+                  onSelect={() =>
+                    batch(() => {
+                      setState("closed", (items) => [...(items ?? []), directory])
+                      setState("directories", (items) => items.filter((item) => pathKey(item) !== pathKey(directory)))
+                    })
+                  }
+                >
+                  {language.t("sidebar.directory.close")}
+                </Menu.Item>
+              </Menu.Content>
+            </Menu.Portal>
+          </Menu>
+        </div>
+        <For
+          each={(visibleSessions().get(pathKey(directory)) ?? []).slice(0, local.limits[pathKey(directory)] ?? 5)}
+          fallback={
+            <div class="ps-8 py-2 text-12-regular text-v2-text-text-faint">{language.t("sidebar.organize.empty")}</div>
+          }
         >
-          {language.t("sidebar.organize.showMore")}
-        </Button>
-      </Show>
-    </div>
-  )
+          {(session) => (
+            <ProjectSessionRow
+              server={server}
+              session={session}
+              openTab={tabs.store.some(
+                (tab) => tab.type === "session" && tab.server === server && tab.sessionId === session.id,
+              )}
+              active={
+                props.currentTab?.type === "session" &&
+                props.currentTab.server === server &&
+                props.currentTab.sessionId === session.id
+              }
+              onOpen={() => actions.openProjectSession(props.ctx.sdk.server, directory, session, { preview: true })}
+            />
+          )}
+        </For>
+        <Show when={(visibleSessions().get(pathKey(directory))?.length ?? 0) > (local.limits[pathKey(directory)] ?? 5)}>
+          <Button
+            variant="ghost-muted"
+            size="small"
+            class="ms-[23px] self-start"
+            onClick={() => setLocal("limits", pathKey(directory), (value) => (value ?? 5) + 5)}
+          >
+            {language.t("sidebar.organize.showMore")}
+          </Button>
+        </Show>
+      </div>
+    )
+  }
 
   return (
     <Show when={enabled() && ready()} fallback={props.fallback()}>
@@ -321,13 +339,7 @@ function DirectorySidebar(props: {
             </Menu.Content>
           </Menu.Portal>
         </Menu>
-        <DirectoryAdd
-          ctx={props.ctx}
-          onAdd={(directory) => {
-            addDirectory(directory)
-            setState("view", "directories")
-          }}
-        />
+        <DirectoryAdd ctx={props.ctx} onAdd={props.ctx.directories.add} />
         <Show
           when={state.view !== "list"}
           fallback={props.children(

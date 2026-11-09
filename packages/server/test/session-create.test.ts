@@ -97,6 +97,103 @@ it.live(
   { timeout: 15_000 },
 )
 
+it.live(
+  "rejects creation and fresh prompts after warm directory deletion and recovers at the original path",
+  () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      const root = path.join(tmp.path, "repo")
+      const directory = path.join(root, "module")
+      const plain = path.join(tmp.path, "plain")
+      yield* Effect.promise(async () => {
+        await fs.mkdir(directory, { recursive: true })
+        await fs.mkdir(plain)
+        await initRepo(root)
+      })
+      const handler = yield* ServerFetch.make(
+        {
+          app: { version: "test" },
+          database: { path: ":memory:" },
+          models: { fetch: false },
+          config: { directory: path.join(tmp.path, "config") },
+          fs: { filewatcher: false },
+        },
+        {
+          overrides: [
+            RipgrepBinary.node.replace(Layer.succeed(RipgrepBinary.Service, { filepath: Effect.succeed(rgPath) })),
+          ],
+        },
+      )
+      const request = (route: string, body?: unknown) =>
+        Effect.promise(() =>
+          handler(
+            new Request(`http://opencode.local${route}`, {
+              method: body === undefined ? "GET" : "POST",
+              headers: { "content-type": "application/json" },
+              body: body === undefined ? undefined : JSON.stringify(body),
+            }),
+          ),
+        )
+      expect((yield* request(`/api/location?location[directory]=${encodeURIComponent(directory)}`)).status).toBe(200)
+      const created = yield* request("/api/session", { location: { directory } })
+      const session = Schema.decodeUnknownSync(Schema.Struct({ data: Session.Info }))(
+        yield* Effect.promise(() => created.json()),
+      ).data
+      expect(
+        (yield* request(`/api/session/${session.id}/synthetic`, { text: "saved history", resume: false })).status,
+      ).toBe(200)
+      yield* Effect.promise(() => fs.rm(directory, { recursive: true }))
+      expect((yield* request(`/api/session/${session.id}/message`)).status).toBe(200)
+      expect((yield* request(`/api/session/${session.id}`)).status).toBe(200)
+      expect((yield* request(`/api/location?location[directory]=${encodeURIComponent(directory)}`)).status).toBe(404)
+      expect((yield* request("/api/session", { location: { directory } })).status).toBe(404)
+      expect((yield* request(`/api/session/${session.id}/prompt`, { text: "continue", resume: false })).status).toBe(
+        404,
+      )
+      yield* Effect.promise(() => fs.mkdir(directory))
+      expect((yield* request(`/api/location?location[directory]=${encodeURIComponent(directory)}`)).status).toBe(200)
+      const fetched = yield* request(`/api/session/${session.id}`)
+      const saved = Schema.decodeUnknownSync(Schema.Struct({ data: Session.Info }))(
+        yield* Effect.promise(() => fetched.json()),
+      ).data
+      expect(String(saved.location.directory)).toBe(directory)
+      const continued = yield* request(`/api/session/${session.id}/prompt`, {
+        text: "continue at original path",
+        resume: false,
+      })
+      expect(continued.status).toBe(200)
+      const marker = path.join(directory, "execution.txt")
+      expect(
+        (yield* request(`/api/session/${session.id}/shell`, { command: `echo restored > execution.txt` })).status,
+      ).toBe(204)
+      const output = yield* Effect.promise(() => fs.readFile(marker, "utf8")).pipe(
+        Effect.retry(Schedule.spaced("10 millis")),
+        Effect.timeout("5 seconds"),
+      )
+      expect(output.trim()).toBe("restored")
+      expect(yield* Effect.promise(() => Bun.file(path.join(root, "execution.txt")).exists())).toBe(false)
+      const replacement = yield* request("/api/session", { location: { directory: plain } })
+      expect(replacement.status).toBe(200)
+      const plainSession = Schema.decodeUnknownSync(Schema.Struct({ data: Session.Info }))(
+        yield* Effect.promise(() => replacement.json()),
+      ).data
+      yield* Effect.promise(() => fs.rm(plain, { recursive: true }))
+      expect((yield* request("/api/session", { location: { directory: plain } })).status).toBe(404)
+      expect(
+        (yield* request(`/api/session/${plainSession.id}/prompt`, { text: "cold missing", resume: false })).status,
+      ).toBe(404)
+      expect((yield* request(`/api/session/${plainSession.id}/message`)).status).toBe(200)
+      yield* Effect.promise(() => fs.mkdir(plain))
+      expect(
+        (yield* request(`/api/session/${plainSession.id}/prompt`, { text: "cold restored", resume: false })).status,
+      ).toBe(200)
+      const original = yield* request(`/api/session/${session.id}`)
+      expect((yield* Effect.promise(() => original.json())).data.location.directory).toBe(directory)
+    }).pipe(Effect.provideService(Flag.Overrides, "working_directories")),
+  // Boots real Git/Location services and runs an actual shell in the restored directory on Windows.
+  { timeout: 15_000 },
+)
+
 const SessionResponse = Schema.Struct({ data: Schema.toEncoded(Session.Info) })
 const SessionsResponse = Schema.Struct({ data: Schema.Array(Schema.toEncoded(Session.Info)) })
 

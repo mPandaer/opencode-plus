@@ -32,6 +32,14 @@ function replay(events: LocationSyncEvent[], start: LocationSyncState = createLo
 
 const missing = replay([target(deleted), { type: "sync.missing", attempt: 1 }]).state
 
+test("explicit restore retry keeps the missing notice and rejects results from the previous attempt", () => {
+  const checking = transitionLocationSync(missing, { type: "retry.requested" })
+  expect(checking.state).toEqual({ status: "syncing", attempt: 2, retries: 0, location: deleted, missing: true })
+  expect(transitionLocationSync(checking.state, { type: "sync.succeeded", attempt: 1 }).state).toBe(checking.state)
+  expect(transitionLocationSync(checking.state, { type: "sync.succeeded", attempt: 2 }).state.status).toBe("synced")
+  expect(transitionLocationSync({ status: "disposed" }, { type: "retry.requested" }).effects).toEqual([])
+})
+
 test("a missing folder stays missing while offline and while reconnecting checks it again", () => {
   expect(missing.status).toBe("missing")
   expect(missingLocation(missing, deleted)).toBe(deleted)

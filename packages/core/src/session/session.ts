@@ -7,6 +7,8 @@ import type { Permission } from "@opencode/schema/permission"
 import { Event } from "@opencode/schema/event"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Bus } from "../bus.js"
+import { FileSystem } from "../filesystem.js"
+import { Flag } from "../flag.js"
 import { Database } from "../database/database.js"
 import { Instance } from "../instance/service.js"
 import { ShellResult } from "../shell/result.js"
@@ -168,6 +170,7 @@ export const make = Effect.fn("Session.make")(function* () {
           // Preparation, the staged revert commit and admission share one acquisition of the session's location
           // services, so projections see its config whoever called prompt.
           return yield* Effect.gen(function* () {
+            if (yield* Flag.enabled("working_directories")) yield* FileSystem.requireDirectory(session.location)
             const item = yield* restore(SessionPrompt.prepare({ session, messageID, input }))
             // Commit a staged revert only after preparation succeeds, before admitting new work.
             if (session.revert) yield* SessionRevert.commit(bus, session)

@@ -978,6 +978,43 @@ test("project new session requires a directory choice and submits the selected e
   await expect(search).toHaveValue("")
 })
 
+test("directory sidebar keeps unavailable groups and history while blocking creation until restore", async ({
+  page,
+}) => {
+  const directory = "C:/OpenCode/Unavailable/module"
+  let missing = true
+  const creates: unknown[] = []
+  await mockWorkspace(page, {
+    name: "Unavailable",
+    flags: { working_directories: true },
+    sessions: [{ id: "ses_unavailable_module", title: "Preserved module history", directory }],
+    onSessionCreate: (body) => {
+      creates.push(body)
+    },
+    seed: { settings: { appearance: { tabLayout: "vertical" } } },
+  })
+  await page.route("**/api/location?**", (route) => {
+    if (!missing || new URL(route.request().url()).searchParams.get("location[directory]") !== directory)
+      return route.fallback()
+    return route.fulfill({
+      status: 404,
+      json: { _tag: "LocationNotFoundError", location: { directory }, message: `Location not found: ${directory}` },
+    })
+  })
+  await page.goto(sessionHref("ses_unavailable_module"))
+  const group = page.locator('[data-slot="vertical-tabs-sidebar"]').getByRole("group", { name: directory, exact: true })
+  await expect(group.getByText("Preserved module history", { exact: true })).toBeVisible()
+  await expect(group.getByText("Directory unavailable", { exact: true })).toBeVisible()
+  await expect(group.getByRole("button", { name: `New session in ${directory}`, exact: true })).toBeDisabled()
+  expect(creates).toEqual([])
+  missing = false
+  await group.getByRole("button", { name: "Try again", exact: true }).click()
+  await expect(group.getByRole("button", { name: `New session in ${directory}`, exact: true })).toBeEnabled()
+  await group.getByRole("button", { name: `New session in ${directory}`, exact: true }).click()
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(directory)
+  expect(creates).toEqual([])
+})
+
 test("directory sidebar adds an empty chosen subdirectory, confirms its full path and creates there", async ({
   page,
 }) => {

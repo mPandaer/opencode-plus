@@ -71,7 +71,7 @@ export function DirectoryAdd(props: {
   )
 }
 
-function DirectoryConfirm(props: {
+export function DirectoryConfirm(props: {
   ctx: ServerCtx
   directory: string
   project?: Pick<Project, "name" | "worktree" | "sandboxes">

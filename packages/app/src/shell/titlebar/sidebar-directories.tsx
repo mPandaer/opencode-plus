@@ -226,14 +226,12 @@ function DirectorySidebar(props: {
   )
   const toggle = (field: "collapsed" | "collapsedProjects", key: string) =>
     setState(field, (items) => (items?.includes(key) ? items.filter((item) => item !== key) : [...(items ?? []), key]))
-  const reorderDirectories = (items: string[]) => {
-    const keys = items.map(pathKey)
-    const selected = new Set<string>(keys)
-    const positions = (state.directoryOrder ?? []).filter((key) => selected.has(key))
-    setState("directoryOrder", (order) =>
-      (order ?? []).map((key) => (selected.has(key) ? keys[positions.indexOf(key)] : key)),
-    )
+  const reorder = (field: "directoryOrder" | "projectOrder", keys: string[]) => {
+    const selected = new Set(keys)
+    const positions = (state[field] ?? []).filter((key) => selected.has(key))
+    setState(field, (order) => (order ?? []).map((key) => (selected.has(key) ? keys[positions.indexOf(key)] : key)))
   }
+  const reorderDirectories = (items: string[]) => reorder("directoryOrder", items.map(pathKey))
 
   onCleanup(props.ctx.data.listen(({ details }) => activity.update(server, details)))
   createEffect(() => {
@@ -511,7 +509,7 @@ function DirectorySidebar(props: {
                 items={orderedProjects()
                   .filter((project) => filtered().some((item) => item.key === project.key))
                   .map((project) => project.key)}
-                onReorder={(keys) => setState("projectOrder", keys)}
+                onReorder={(keys) => reorder("projectOrder", keys)}
               >
                 {(key, index) => {
                   const project = () => filtered().find((item) => item.key === key)!

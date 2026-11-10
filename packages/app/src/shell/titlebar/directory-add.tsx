@@ -3,6 +3,7 @@ import { createStore, reconcile } from "solid-js/store"
 import { Button } from "@opencode/ui/button"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
+import { Loader } from "@opencode/ui/loader"
 import type { Project } from "@/runtime/server/types"
 import { isProjectDirectory } from "@/workspaces/paths"
 import { Menu } from "@opencode/ui/menu"
@@ -22,6 +23,8 @@ export function DirectoryAdd(props: {
   ctx: ServerCtx
   project?: Pick<Project, "name" | "worktree" | "sandboxes">
   onAdd: (directory: string) => void
+  /** Overrides the project button's label when the caller only adds a directory, without opening a session. */
+  label?: string
 }) {
   const language = useLanguage()
   const picker = useDirectoryPicker()
@@ -44,12 +47,15 @@ export function DirectoryAdd(props: {
   if (props.project)
     return (
       <IconButton
-        icon={<Icon name="plus" />}
+        icon={<Icon name="folder-add-left" />}
         variant="ghost-muted"
         size="small"
-        aria-label={language.t("sidebar.directory.projectNew", {
-          project: props.project.name || props.project.worktree,
-        })}
+        aria-label={
+          props.label ??
+          language.t("sidebar.directory.projectNew", {
+            project: props.project.name || props.project.worktree,
+          })
+        }
         onClick={() => pick(props.project?.worktree)}
       />
     )
@@ -57,7 +63,7 @@ export function DirectoryAdd(props: {
     <Menu placement="bottom-start">
       <Menu.Trigger
         as={IconButton}
-        icon={<Icon name="plus" />}
+        icon={<Icon name="folder-add-left" />}
         variant="ghost-muted"
         size="small"
         aria-label={language.t("sidebar.directory.add")}
@@ -116,23 +122,42 @@ export function DirectoryConfirm(props: {
   return (
     <Dialog fit>
       <DialogHeader>
-        <DialogTitleGroup title={language.t("sidebar.directory.confirm")} />
+        <DialogTitleGroup
+          title={language.t("sidebar.directory.confirm")}
+          description={language.t("sidebar.directory.confirmDescription")}
+        />
       </DialogHeader>
-      <DialogBody>
-        <code class="block break-all text-13-regular">{props.directory}</code>
+      <DialogBody class="flex flex-col gap-2 px-4">
+        <div class="flex items-center gap-2 rounded-md border border-v2-border-border-base bg-v2-background-bg-base px-3 py-2">
+          <Icon name="folder" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+          <code class="min-w-0 select-text break-all font-mono text-13-regular text-v2-text-text-base">
+            {props.directory}
+          </code>
+        </div>
         <Show when={outside()}>
-          <p role="alert">{language.t("sidebar.directory.outsideProject")}</p>
+          <p role="alert" class="rounded-md bg-v2-state-bg-warning px-3 py-2 text-12-regular text-v2-state-fg-warning">
+            {language.t("sidebar.directory.outsideProject")}
+          </p>
         </Show>
         <Show when={view().failed}>
-          <p role="alert">{language.t("common.requestFailed")}</p>
+          <p role="alert" class="rounded-md bg-v2-state-bg-danger px-3 py-2 text-12-regular text-v2-state-fg-danger">
+            {language.t("common.requestFailed")}
+          </p>
         </Show>
       </DialogBody>
       <DialogFooter>
         <Button variant="ghost" disabled={view().saving} onClick={() => dialog.close()}>
           {language.t("common.cancel")}
         </Button>
-        <Button disabled={view().saving || !!outside()} onClick={() => void save()}>
-          {language.t(props.project ? "sidebar.directory.create" : "sidebar.directory.add")}
+        <Button
+          variant={view().saving ? "loading" : "contrast"}
+          disabled={view().saving || !!outside()}
+          onClick={() => void save()}
+        >
+          <Show when={view().saving}>
+            <Loader class="size-3.5 shrink-0" />
+          </Show>
+          {language.t("sidebar.directory.add")}
         </Button>
       </DialogFooter>
     </Dialog>

@@ -9,68 +9,109 @@
 
 .sidebar-directory {
   position: relative;
-  margin-bottom: 18px;
+  margin-bottom: 4px;
+}
+
+.sidebar-directory-project-title {
+  position: relative;
+  height: 24px;
+}
+
+.sidebar-directory-project-add,
+.sidebar-directory-project-title > button {
+  position: absolute;
+  top: 0;
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  opacity: 0;
+}
+
+.sidebar-directory-project-add {
+  inset-inline-end: 28px;
+}
+
+.sidebar-directory-project-title > button {
+  inset-inline-end: 4px;
+}
+
+.sidebar-directory-project-title:is(:hover, :focus-within) {
+  padding-inline-end: 56px;
+}
+
+@media (hover: none) {
+  .sidebar-directory-project-add,
+  .sidebar-directory-project-title > button {
+    opacity: 1;
+  }
+
+  .sidebar-directory-project-title {
+    padding-inline-end: 56px;
+  }
 }
 
 .sidebar-directory-heading {
   position: relative;
-  height: 32px;
+  height: 28px;
   padding: 0 4px;
   gap: 4px;
 }
 
 .sidebar-directory-fold {
   min-width: 0;
-  height: 32px;
-  gap: 6px;
+  height: 28px;
+  gap: 4px;
   padding-inline-start: 0;
-}
-
-.sidebar-directory-fold > svg:first-child {
-  width: 10px;
 }
 
 .sidebar-directory-fold > div {
   text-align: start;
 }
 
-/* The drag handle sits at the row start, above the fold label it overlaps. */
-.sidebar-directory-heading > button:first-child {
-  position: absolute;
-  inset-inline-start: 0;
-  top: 8px;
-  z-index: 1;
+/* Selection is a chip inside the session column, so the indent gutter stays visible. */
+.sidebar-directories [data-titlebar-tab-action] {
+  background: none;
 }
 
-.sidebar-directory::before {
+.sidebar-directories [data-titlebar-tab-action]::before {
   content: "";
   position: absolute;
-  inset-inline-start: 23px;
-  top: 35px;
-  bottom: 2px;
-  width: 1px;
-  background: var(--v2-border-border-muted);
+  inset-block: 0;
+  inset-inline-start: 20px;
+  inset-inline-end: 8px;
+  border-radius: 6px;
+  background: var(--tab-overlay);
   pointer-events: none;
-}
-
-.sidebar-directory:has(> .sidebar-directory-heading > .sidebar-directory-fold[aria-expanded="false"])::before {
-  display: none;
+  z-index: -1;
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .sidebar-directory-project-title:is(:hover, :focus-within) .sidebar-directory-project-add,
+  .sidebar-directory-project-title:is(:hover, :focus-within) > button {
+    opacity: 1;
+  }
+
   /* Actions keep fixed hit targets at the row end; only the quiet label reclaims the width. */
   .sidebar-directory-heading > button:not(.sidebar-directory-fold) {
     position: absolute;
+    top: 0;
+    height: 28px;
     z-index: 1;
     opacity: 0;
   }
 
-  .sidebar-directory-heading > button[data-component="icon-button-v2"] {
+  .sidebar-directory-new {
     inset-inline-end: 28px;
   }
 
-  .sidebar-directory-heading > button[data-component="icon-button-v2"]:last-child {
+  .sidebar-directory-menu {
     inset-inline-end: 4px;
+  }
+
+  .sidebar-directory-heading > button:not(.sidebar-directory-fold):not(.sidebar-directory-new):not(
+      .sidebar-directory-menu
+    ) {
+    inset-inline-end: 52px;
   }
 
   .sidebar-directory-heading:is(:hover, :focus-within, :has([data-state="open"]))
@@ -78,12 +119,35 @@
     opacity: 1;
   }
 
-  .sidebar-directory-fold {
-    padding-inline-end: 52px;
+  .sidebar-directory-heading:is(:hover, :focus-within, :has([data-state="open"])) .sidebar-directory-fold {
+    padding-inline-end: 76px;
+  }
+}
+
+@media (hover: none) {
+  .sidebar-directory-heading > button:not(.sidebar-directory-fold) {
+    position: absolute;
+    top: 0;
+    height: 28px;
+    z-index: 1;
+    opacity: 1;
   }
 
-  .sidebar-directory-heading:not(:hover):not(:focus-within):not(:has([data-state="open"]))
-    .sidebar-directory-fold {
-    padding-inline-end: 0;
+  .sidebar-directory-new {
+    inset-inline-end: 28px;
+  }
+
+  .sidebar-directory-menu {
+    inset-inline-end: 4px;
+  }
+
+  .sidebar-directory-heading > button:not(.sidebar-directory-fold):not(.sidebar-directory-new):not(
+      .sidebar-directory-menu
+    ) {
+    inset-inline-end: 52px;
+  }
+
+  .sidebar-directory-fold {
+    padding-inline-end: 76px;
   }
 }

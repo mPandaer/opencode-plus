@@ -974,7 +974,11 @@ test("typing in the shortcut search while recording filters instead of binding t
 })
 
 test("the new session shortcut waits for a shortcut recording, then leaves settings", async ({ page }) => {
-  const { settings } = await open(page)
+  // Working directories are enabled by the mock; a remembered directory keeps the shortcut in the draft path
+  // instead of opening the directory picker.
+  const { settings } = await open(page, {
+    seed: { storage: { "opencode.global.dat:working-directory": { last: directory } } },
+  })
   await settings.getByRole("tab", { name: "Shortcuts", exact: true }).click()
   const binding = settings.locator('[data-keybind-id="tab.new"]')
   await binding.click()
@@ -2467,11 +2471,42 @@ test("the Side tabs interface mode switches to vertical tabs and survives reload
   await expect(layout.getByRole("radio", { name: "Side tabs", exact: true })).toBeChecked()
   await expect(page.locator('[data-slot="vertical-tabs-sidebar"]')).toBeVisible()
   await expect(page.locator('[data-slot="titlebar-tabs"]')).toHaveCount(0)
+  // Side is a plain tab list; directory tooling belongs only to the Directories mode.
+  await expect(page.getByRole("button", { name: "Filter ownership", exact: true })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Search sessions and groups", exact: true })).toHaveCount(0)
 
   await page.reload()
   await expect(layout.getByRole("radio", { name: "Side tabs", exact: true })).toBeChecked()
   await expect(page.locator('[data-slot="vertical-tabs-sidebar"]')).toBeVisible()
   await expect(page.locator('[data-slot="titlebar-tabs"]')).toHaveCount(0)
+})
+
+test("the Directories interface mode is offered with working directories and survives reload", async ({ page }) => {
+  const { settings } = await open(page)
+  const layout = settings.getByRole("group", { name: "Interface layout", exact: true })
+  const directories = layout.getByRole("radio", { name: "Directories", exact: true })
+  await expect(directories).toBeVisible()
+  await expect(page.getByRole("button", { name: "Filter ownership", exact: true })).toHaveCount(0)
+
+  await layout.getByText("Directories", { exact: true }).click()
+  await expect(directories).toBeChecked()
+  await expect(page.locator('[data-slot="vertical-tabs-sidebar"]')).toBeVisible()
+  await expect(page.locator('[data-slot="titlebar-tabs"]')).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Filter ownership", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Search sessions and groups", exact: true })).toBeVisible()
+
+  await page.reload()
+  await expect(layout.getByRole("radio", { name: "Directories", exact: true })).toBeChecked()
+  await expect(page.locator('[data-slot="vertical-tabs-sidebar"]')).toBeVisible()
+  await expect(page.getByRole("button", { name: "Filter ownership", exact: true })).toBeVisible()
+})
+
+test("working directories disabled hides the Directories interface mode", async ({ page }) => {
+  const { settings } = await open(page, { flags: { working_directories: false } })
+  const layout = settings.getByRole("group", { name: "Interface layout", exact: true })
+  await expect(layout.getByRole("radio", { name: "Directories", exact: true })).toHaveCount(0)
+  await expect(layout.getByRole("radio", { name: "Top tabs", exact: true })).toBeChecked()
+  await expect(layout.getByRole("radio")).toHaveCount(3)
 })
 
 for (const viewport of [

@@ -1,6 +1,8 @@
 # 桌面侧边栏：项目与工作目录分组
 
-状态：产品范围已确认，实现已集成至 `desktop-directory-groups`。最终自动化证据及未完成的实机验收见 [acceptance.md](../.scratch/desktop-sidebar/acceptance.md)。
+状态：产品范围已确认，原目录分组实现已集成至 `desktop-directory-groups`；第四种界面模式 `Directories` 已在当前分支实现，最终自动化与实机验证进行中。原实现证据及未完成的实机验收见 [acceptance.md](../.scratch/desktop-sidebar/acceptance.md)。
+
+> 2026-11-10 方向更新：目录分组不再作为 Side 模式内部的覆盖层，而是单独的第四种界面模式 `Directories`。该模式只保留**目录视图**（项目标题分组 + 标题上的悬停“添加子目录”入口），不再提供项目视图和分组切换；旧 `view` 值不做迁移，只做宽容解码。本文记录的行为语义（工作目录归属、添加/关闭、筛选、持久化、不可用态）继续有效；呈现、入口与旧 `sidebarOrganize` 的退役以 [ADR 0001](adr/0001-directories-interface-mode.md) 和 [第四模式决策记录](../.scratch/desktop-sidebar/interface-mode-decision.md) 为准。
 
 本文记录需求访谈 Q1–Q16 的结论。领域术语见 [GLOSSARY.md](../GLOSSARY.md)。
 
@@ -47,7 +49,7 @@
 
 ### 分组与排序
 
-目录视图直接显示工作目录及其会话。项目视图增加项目父级，并允许项目和目录分别折叠。
+目录视图直接显示工作目录及其会话。项目视图增加项目父级，并允许项目和目录分别折叠。（第四模式只保留目录视图，项目视图已按 [ADR 0001](adr/0001-directories-interface-mode.md) 移除；项目名作为段落标题保留。）
 
 项目和工作目录默认按添加顺序排列，支持拖动调整。两种视图使用一致的工作目录顺序：项目视图在对应项目内沿用该顺序。组内会话按最近活跃排序；会话活动不改变目录的位置。
 
@@ -101,7 +103,7 @@
 
 以下是访谈时对当前工作区的只读检查结论，描述现状而非已交付行为。
 
-- 现有侧边栏配置为 `list` 和 `projects`，默认 `list`；Projects 按项目的 worktree 分组，尚无工作目录层。入口见 [settings/model.tsx](../packages/app/src/settings/model.tsx)、[sidebar-organized.tsx](../packages/app/src/shell/titlebar/sidebar-organized.tsx)。
+- （历史）访谈时侧边栏配置为 `list` 和 `projects`，默认 `list`；Projects 按项目的 worktree 分组，尚无工作目录层。`sidebarOrganize` 与 `SidebarOrganized` 已按 [ADR 0001](adr/0001-directories-interface-mode.md) 退休，Side 恢复为平铺标签。
 - 后端 Location 可以保留子目录，会话独立记录 Location 和项目归属，具备表达子模块目录的基础。见 [location.ts](../packages/core/src/location.ts)、[session.ts](../packages/core/src/session.ts)。
 - Home 添加项目后使用返回项目的 worktree，丢失原始子目录选择。见 [home/model.ts](../packages/app/src/home/model.ts)、[home/machine.ts](../packages/app/src/home/machine.ts)。
 - 新会话 Local 路径优先使用主 checkout；需要保留选中的工作目录。见 [workspace/controller.ts](../packages/app/src/new-session/workspace/controller.ts)、[composer-adapter.ts](../packages/app/src/new-session/composer-adapter.ts)。

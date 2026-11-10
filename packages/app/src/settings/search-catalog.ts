@@ -27,7 +27,7 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     tab: "general",
     label: "settings.general.row.interfaceMode.title",
     target: "settings-tab-layout",
-    keywords: "top side tabs inbox sidebar mode layout vertical horizontal focus pro",
+    keywords: "top side tabs inbox directories directory sidebar mode layout vertical horizontal focus pro",
   },
   {
     tab: "general",
@@ -124,13 +124,6 @@ export const clientSettings: Entry<SettingsRootTab>[] = [
     target: "settings-new-question-ui",
     description: "settings.experimental.row.newQuestionUI.description",
     keywords: "question answers keyboard dock redesign",
-  },
-  {
-    tab: "experimental",
-    label: "settings.experimental.row.sidebarOrganize.title",
-    target: "settings-sidebar-organize",
-    description: "settings.experimental.row.sidebarOrganize.description",
-    keywords: "vertical side tabs projects recents organize sidebar",
   },
   {
     tab: "appearance",

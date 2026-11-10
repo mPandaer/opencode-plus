@@ -85,6 +85,7 @@ function DirectorySidebar(props: {
   const [local, setLocal] = createStore({
     limits: {} as Record<string, number>,
     search: "",
+    searchOpen: false,
     projects: [] as string[],
     directories: [] as string[],
   })
@@ -103,7 +104,7 @@ function DirectorySidebar(props: {
   const enabled = () => policy.data?.experimental?.flags?.working_directories === true
   const history = useQuery(() => ({
     queryKey: ["sidebar-directory-history", props.ctx.sdk.scope],
-    enabled: enabled() && ready() && state.view !== "list",
+    enabled: enabled() && ready(),
     queryFn: async ({ signal }) => {
       const sessions: SessionInfo[] = []
       let cursor: string | undefined
@@ -142,11 +143,13 @@ function DirectorySidebar(props: {
       return { directory, project: project?.vcs === "git" ? project : undefined }
     })
     return Array.from(
-      Map.groupBy(entries, (entry) => entry.project?.id ?? pathKey(entry.directory)),
+      Map.groupBy(entries, (entry) => entry.project?.id ?? "local"),
       ([key, entries]) => ({
         key,
         project: entries[0].project,
-        name: entries[0].project ? entries[0].project.name || entries[0].project.worktree : entries[0].directory,
+        name: entries[0].project
+          ? entries[0].project.name || entries[0].project.worktree
+          : language.t("sidebar.directory.localGroup"),
         directories: entries.map((entry) => entry.directory),
       }),
     )
@@ -216,7 +219,6 @@ function DirectorySidebar(props: {
           ),
         )
         setState("collapsed", (items) => (items ?? []).filter((item) => item !== pathKey(directory)))
-        setState("collapsedProjects", (items) => (items ?? []).filter((item) => item !== project.key))
         props.ctx.directories.revealedDone()
       }),
     )
@@ -238,8 +240,8 @@ function DirectorySidebar(props: {
       (a, b) => (state.projectOrder?.indexOf(a.key) ?? -1) - (state.projectOrder?.indexOf(b.key) ?? -1),
     ),
   )
-  const toggle = (field: "collapsed" | "collapsedProjects", key: string) =>
-    setState(field, (items) => (items?.includes(key) ? items.filter((item) => item !== key) : [...(items ?? []), key]))
+  const toggle = (key: string) =>
+    setState("collapsed", (items) => (items?.includes(key) ? items.filter((item) => item !== key) : [...(items ?? []), key]))
   const reorder = (field: "directoryOrder" | "projectOrder", keys: string[]) => {
     const selected = new Set(keys)
     const positions = (state[field] ?? []).filter((key) => selected.has(key))
@@ -275,22 +277,29 @@ function DirectorySidebar(props: {
         index={index()}
         reorderLabel={language.t("sidebar.directory.reorder", { directory })}
       >
-        {(handle) => (
+        {(handle, handleProps, dragState) => (
           <>
-            <div role="group" aria-label={directory} class="sidebar-directory mb-2 flex min-w-0 flex-col gap-[3px]">
-              <div class="sidebar-directory-heading flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1 text-13-medium text-v2-text-text-muted">
-                {handle}
+            <div role="group" aria-label={directory} class="sidebar-directory flex min-w-0 flex-col gap-[2px]">
+              <div
+                ref={handleProps}
+                class="sidebar-directory-heading flex min-w-0 cursor-grab items-center gap-2 rounded-[6px] px-2 py-1 text-13-medium text-v2-text-text-base active:cursor-grabbing"
+                classList={{
+                  "bg-v2-overlay-simple-overlay-hover shadow-[inset_0_0_0_1px_var(--v2-border-border-focus)]":
+                    dragState.dropTarget(),
+                  "opacity-60": dragState.dragSource(),
+                }}
+              >
                 <button
                   type="button"
                   aria-label={language.t("sidebar.directory.fold", { directory })}
                   aria-expanded={!state.collapsed?.includes(pathKey(directory))}
-                  onClick={() => toggle("collapsed", pathKey(directory))}
+                  onClick={() => toggle(pathKey(directory))}
                   title={directory}
                   class="sidebar-directory-fold flex min-w-0 flex-1 items-center gap-2 text-start rounded-[6px] focus-visible:outline focus-visible:outline-1"
                 >
                   <Icon
-                    name="fill-triangle-down"
-                    size="small"
+                    name="chevron-down"
+                    size="normal"
                     classList={{ "-rotate-90": state.collapsed?.includes(pathKey(directory)) }}
                   />
                   <Icon name="folder" size="small" />
@@ -301,6 +310,7 @@ function DirectorySidebar(props: {
                   </div>
                 </button>
                 <IconButton
+                  class="sidebar-directory-new"
                   icon={<Icon name="plus" />}
                   variant="ghost-muted"
                   size="small"
@@ -314,6 +324,7 @@ function DirectorySidebar(props: {
                 <Menu placement="bottom-end">
                   <Menu.Trigger
                     as={IconButton}
+                    class="sidebar-directory-menu"
                     icon={<Icon name="dot-grid" />}
                     variant="ghost-muted"
                     size="small"
@@ -330,9 +341,10 @@ function DirectorySidebar(props: {
                     </Menu.Content>
                   </Menu.Portal>
                 </Menu>
+                {handle}
               </div>
               <Show when={isLocationNotFoundError(availability.error)}>
-                <div class="sidebar-directory-error flex items-center gap-2 ps-8 text-12-regular text-v2-text-text-muted">
+                <div class="sidebar-directory-error flex items-center gap-2 ps-[42px] text-12-regular text-v2-text-text-muted">
                   <span role="status">{language.t("sidebar.directory.unavailable")}</span>
                   <Button variant="ghost-muted" size="small" onClick={() => void availability.refetch()}>
                     {language.t("common.retry")}
@@ -345,11 +357,6 @@ function DirectorySidebar(props: {
                     0,
                     local.limits[pathKey(directory)] ?? 5,
                   )}
-                  fallback={
-                    <div class="ps-8 py-2 text-12-regular text-v2-text-text-faint">
-                      {language.t("sidebar.organize.empty")}
-                    </div>
-                  }
                 >
                   {(session) => (
                     <ProjectSessionRow
@@ -377,7 +384,7 @@ function DirectorySidebar(props: {
                   <Button
                     variant="ghost-muted"
                     size="small"
-                    class="ms-[23px] self-start"
+                    class="ms-[42px] self-start"
                     onClick={() => setLocal("limits", pathKey(directory), (value) => (value ?? 5) + 5)}
                   >
                     {language.t("sidebar.organize.showMore")}
@@ -393,46 +400,77 @@ function DirectorySidebar(props: {
 
   return (
     <Show when={enabled() && ready()} fallback={props.fallback()}>
-      <div class="sidebar-directories flex min-h-0 flex-1 flex-col gap-3">
-        <div class="flex h-8 shrink-0 items-center justify-between gap-1 px-1">
-          <Menu placement="bottom-start">
+      <div class="sidebar-directories flex min-h-0 flex-1 flex-col gap-1">
+        <div class="sidebar-directory-toolbar flex h-7 shrink-0 items-center gap-1 px-1">
+          <IconButton
+            icon={<Icon name="magnifying-glass" size="small" />}
+            variant="ghost-muted"
+            size="small"
+            aria-label={language.t("sidebar.directory.search")}
+            aria-expanded={local.searchOpen}
+            onClick={() => setLocal("searchOpen", !local.searchOpen)}
+          />
+          <Menu placement="bottom-end">
             <Menu.Trigger
-              as={Button}
+              as={IconButton}
+              icon={<Icon name="sliders" size="small" />}
               variant="ghost-muted"
               size="small"
-              aria-label={language.t("sidebar.directory.view")}
-            >
-              {language.t(
-                state.view === "list"
-                  ? "sidebar.directory.flat"
-                  : state.view === "projects"
-                    ? "sidebar.directory.projects"
-                    : "sidebar.directory.directories",
-              )}
-              <Icon name="fill-triangle-down" size="small" />
-            </Menu.Trigger>
+              aria-label={language.t("sidebar.directory.filter")}
+            />
             <Menu.Portal>
               <Menu.Content>
-                <Menu.Item onSelect={() => setState("view", "directories")}>
-                  {language.t("sidebar.directory.directories")}
-                </Menu.Item>
-                <Menu.Item onSelect={() => setState("view", "projects")}>
-                  {language.t("sidebar.directory.projects")}
-                </Menu.Item>
-                <Menu.Item onSelect={() => setState("view", "list")}>{language.t("sidebar.directory.flat")}</Menu.Item>
+                <MenuScroll class="max-h-80">
+                  <For each={projects()}>
+                    {(project) => (
+                      <>
+                        <Menu.CheckboxItem
+                          checked={local.projects.includes(project.key)}
+                          closeOnSelect={false}
+                          onChange={(checked) =>
+                            setLocal("projects", (items) =>
+                              checked ? [...items, project.key] : items.filter((item) => item !== project.key),
+                            )
+                          }
+                        >
+                          {language.t("sidebar.directory.projectGroup", { project: project.name })}
+                        </Menu.CheckboxItem>
+                        <For each={project.directories}>
+                          {(directory) => (
+                            <Menu.CheckboxItem
+                              checked={local.directories.includes(pathKey(directory))}
+                              closeOnSelect={false}
+                              onChange={(checked) =>
+                                setLocal("directories", (items) =>
+                                  checked
+                                    ? [...items, pathKey(directory)]
+                                    : items.filter((item) => item !== pathKey(directory)),
+                                )
+                              }
+                            >
+                              {language.t("sidebar.directory.filterDirectory", { directory })}
+                            </Menu.CheckboxItem>
+                          )}
+                        </For>
+                      </>
+                    )}
+                  </For>
+                </MenuScroll>
               </Menu.Content>
             </Menu.Portal>
           </Menu>
+          <span class="flex-1" />
           <DirectoryAdd ctx={props.ctx} onAdd={props.ctx.directories.add} />
         </div>
-        <Show
-          when={state.view !== "list"}
-          fallback={props.children(
-            () => true,
-            () => undefined,
-          )}
-        >
-          <div class="sidebar-directory-search flex items-center gap-1 px-1">
+        <Show when={local.searchOpen}>
+          <div
+            class="sidebar-directory-search flex items-center gap-1 px-1"
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return
+              event.preventDefault()
+              setLocal({ searchOpen: false, search: "" })
+            }}
+          >
             <TextField
               type="search"
               label={language.t("sidebar.directory.search")}
@@ -441,81 +479,48 @@ function DirectorySidebar(props: {
               value={local.search}
               onChange={(search) => setLocal("search", search)}
             />
-            <div class="flex shrink-0 items-center gap-1">
-              <Menu placement="bottom-end">
-                <Menu.Trigger
-                  as={IconButton}
-                  icon={<Icon name="sliders" />}
-                  variant="ghost-muted"
-                  size="small"
-                  aria-label={language.t("sidebar.directory.filter")}
-                />
-                <Menu.Portal>
-                  <Menu.Content>
-                    <MenuScroll class="max-h-80">
-                      <For each={projects()}>
-                        {(project) => (
-                          <>
-                            <Menu.CheckboxItem
-                              checked={local.projects.includes(project.key)}
-                              closeOnSelect={false}
-                              onChange={(checked) =>
-                                setLocal("projects", (items) =>
-                                  checked ? [...items, project.key] : items.filter((item) => item !== project.key),
-                                )
-                              }
-                            >
-                              {language.t("sidebar.directory.projectGroup", { project: project.name })}
-                            </Menu.CheckboxItem>
-                            <For each={project.directories}>
-                              {(directory) => (
-                                <Menu.CheckboxItem
-                                  checked={local.directories.includes(pathKey(directory))}
-                                  closeOnSelect={false}
-                                  onChange={(checked) =>
-                                    setLocal("directories", (items) =>
-                                      checked
-                                        ? [...items, pathKey(directory)]
-                                        : items.filter((item) => item !== pathKey(directory)),
-                                    )
-                                  }
-                                >
-                                  {language.t("sidebar.directory.filterDirectory", { directory })}
-                                </Menu.CheckboxItem>
-                              )}
-                            </For>
-                          </>
-                        )}
-                      </For>
-                    </MenuScroll>
-                  </Menu.Content>
-                </Menu.Portal>
-              </Menu>
-            </div>
           </div>
-          <Show when={local.search || local.projects.length || local.directories.length}>
-            <Button variant="ghost-muted" size="small" class="mx-1 self-start" onClick={clearFilters}>
-              {language.t("sidebar.directory.clearFilters")}
+        </Show>
+        <Show when={local.search || local.projects.length || local.directories.length}>
+          <Button variant="ghost-muted" size="small" class="mx-1 self-start" onClick={clearFilters}>
+            {language.t("sidebar.directory.clearFilters")}
+          </Button>
+        </Show>
+        <div data-scrollable class="min-h-0 flex-1 overflow-y-auto">
+          <Show when={history.isPending}>
+            <Loader />
+          </Show>
+          <Show when={history.isError}>
+            <Button variant="ghost-muted" onClick={() => void history.refetch()}>
+              {language.t("common.retry")}
             </Button>
           </Show>
-          <div data-scrollable class="min-h-0 flex-1 overflow-y-auto">
-            <Show when={history.isPending}>
-              <Loader />
-            </Show>
-            <Show when={history.isError}>
-              <Button variant="ghost-muted" onClick={() => void history.refetch()}>
-                {language.t("common.retry")}
-              </Button>
-            </Show>
+          <Show
+            when={directories().length > 0}
+            fallback={
+              <Show when={!history.isPending}>
+                <div class="sidebar-directory-empty flex flex-col items-start gap-2 px-3 py-6 text-12-regular text-v2-text-text-muted">
+                  <div class="text-13-medium text-v2-text-text-base">
+                    {language.t("sidebar.directory.empty.title")}
+                  </div>
+                  <div>{language.t("sidebar.directory.empty.description")}</div>
+                  <DirectoryAdd ctx={props.ctx} onAdd={props.ctx.directories.add} />
+                </div>
+              </Show>
+            }
+          >
             <Show
-              when={state.view === "projects"}
+              when={filtered().length > 0}
               fallback={
-                <SortableList
-                  items={directories().filter((directory) => visibleSessions().has(pathKey(directory)))}
-                  onReorder={reorderDirectories}
-                >
-                  {directoryRow}
-                </SortableList>
+                <div class="sidebar-directory-empty flex flex-col items-start gap-2 px-3 py-6 text-12-regular text-v2-text-text-muted">
+                  <div class="text-13-medium text-v2-text-text-base">
+                    {language.t("sidebar.directory.noMatches.title")}
+                  </div>
+                  <div>{language.t("sidebar.directory.noMatches.description")}</div>
+                  <Button variant="ghost-muted" size="small" onClick={clearFilters}>
+                    {language.t("sidebar.directory.clearFilters")}
+                  </Button>
+                </div>
               }
             >
               <SortableList
@@ -532,72 +537,59 @@ function DirectorySidebar(props: {
                       index={index()}
                       reorderLabel={language.t("sidebar.directory.projectReorder", { project: project().name })}
                     >
-                      {(handle) => (
-                        <>
+                      {(handle, handleProps, dragState) => (
+                        <div
+                          role="group"
+                          aria-label={language.t("sidebar.directory.projectGroup", { project: project().name })}
+                          class="sidebar-directory-project mb-2 min-w-0"
+                        >
                           <div
-                            role="group"
-                            aria-label={language.t("sidebar.directory.projectGroup", { project: project().name })}
-                            class="mb-3 min-w-0"
+                            ref={handleProps}
+                            class="sidebar-directory-project-title flex min-w-0 cursor-grab items-center gap-2 rounded-[6px] px-2 py-1 text-12-regular text-v2-text-text-muted active:cursor-grabbing"
+                            classList={{
+                              "bg-v2-overlay-simple-overlay-hover shadow-[inset_0_0_0_1px_var(--v2-border-border-focus)]":
+                                dragState.dropTarget(),
+                              "opacity-60": dragState.dragSource(),
+                            }}
                           >
-                            <div class="flex min-w-0 items-center gap-2 px-2 py-1 text-13-medium text-v2-text-text-muted">
-                              {handle}
-                              <button
-                                type="button"
-                                aria-label={language.t("sidebar.directory.projectFold", { project: project().name })}
-                                aria-expanded={!state.collapsedProjects?.includes(key)}
-                                onClick={() => toggle("collapsedProjects", key)}
-                                class="flex min-w-0 flex-1 items-center gap-2 text-start rounded-[6px] focus-visible:outline focus-visible:outline-1"
-                              >
-                                <Icon
-                                  name="fill-triangle-down"
-                                  size="small"
-                                  classList={{ "-rotate-90": state.collapsedProjects?.includes(key) }}
-                                />
-                                <Show when={project().project} fallback={<Icon name="folder" size="small" />}>
-                                  {(value) => <ProjectIcon project={value()} />}
-                                </Show>
-                                <div
-                                  class="min-w-0 flex-1 truncate"
-                                  title={project().project?.worktree ?? project().name}
-                                >
-                                  {project().name}
-                                </div>
-                              </button>
+                            <Show when={project().project} fallback={<Icon name="folder" size="small" />}>
+                              {(value) => <ProjectIcon project={value()} />}
+                            </Show>
+                            <div
+                              class="min-w-0 flex-1 truncate"
+                              title={project().project?.worktree ?? project().name}
+                            >
+                              {project().name}
+                            </div>
+                            <span class="sidebar-directory-project-add">
                               <DirectoryAdd
                                 ctx={props.ctx}
-                                project={
-                                  project().project ?? { name: project().name, worktree: project().name, sandboxes: [] }
-                                }
-                                onAdd={(directory) => {
-                                  addDirectory(directory)
-                                  void tabs.newDraft({ server, directory, worktree: "main" })
-                                }}
+                                project={project().project}
+                                label={language.t("sidebar.directory.addToProject", { project: project().name })}
+                                onAdd={addDirectory}
                               />
-                            </div>
-                            <Show when={!state.collapsedProjects?.includes(key)}>
-                              <div class="ms-3 border-s border-v2-border-base ps-1">
-                                <SortableList items={project().directories} onReorder={reorderDirectories}>
-                                  {directoryRow}
-                                </SortableList>
-                              </div>
-                            </Show>
+                            </span>
+                            {handle}
                           </div>
-                        </>
+                          <SortableList items={project().directories} onReorder={reorderDirectories}>
+                            {directoryRow}
+                          </SortableList>
+                        </div>
                       )}
                     </SortableGroup>
                   )
                 }}
               </SortableList>
             </Show>
-            {/* Keep tab shortcuts registered without duplicating session rows in the directory view. */}
-            <div class="hidden">
-              {props.children(
-                () => true,
-                () => undefined,
-              )}
-            </div>
+          </Show>
+          {/* Keep tab shortcuts registered without duplicating session rows in the directory view. */}
+          <div class="hidden">
+            {props.children(
+              () => true,
+              () => undefined,
+            )}
           </div>
-        </Show>
+        </div>
       </div>
     </Show>
   )
@@ -634,19 +626,35 @@ function SortableGroup(props: {
   id: string
   index: number
   reorderLabel: string
-  children: (handle: JSX.Element) => JSX.Element
+  children: (
+    handle: JSX.Element | undefined,
+    handleProps: (element: HTMLElement) => void,
+    state: { dropTarget: Accessor<boolean>; dragSource: Accessor<boolean> },
+  ) => JSX.Element
 }) {
   const sortable = useSortable({
     // Solid owns the group order; optimistic DOM moves would be applied a second time on drop.
     plugins: (defaults) => defaults.filter((plugin) => plugin !== OptimisticSortingPlugin),
-    // Group contents can be much taller than their headings; never collide with that dragged content.
+    // Collide by pointer, not by the dragged group's shape: that shape spans many rows and would match
+    // several groups at once. Outside every band, fall back to the nearest group so a drag that goes a
+    // little past the first or last row still lands somewhere instead of losing its target.
     collisionDetector: ({ dragOperation, droppable }) => {
-      if (!droppable.shape?.containsPoint(dragOperation.position.current)) return null
+      if (!droppable.shape) return null
+      const pointer = dragOperation.position.current
+      if (droppable.shape.containsPoint(pointer)) {
+        return {
+          id: droppable.id,
+          value: 1,
+          type: CollisionType.PointerIntersection,
+          priority: CollisionPriority.High,
+        }
+      }
+      const center = droppable.shape.center
       return {
         id: droppable.id,
-        value: 1,
-        type: CollisionType.PointerIntersection,
-        priority: CollisionPriority.High,
+        value: 1 / Math.max(Math.hypot(pointer.x - center.x, pointer.y - center.y), 1),
+        type: CollisionType.Collision,
+        priority: CollisionPriority.Low,
       }
     },
     get id() {
@@ -656,20 +664,25 @@ function SortableGroup(props: {
       return props.index
     },
   })
+  const handleProps = (element: HTMLElement) => {
+    sortable.handleRef(element)
+    // The whole group is the drop band, not only its heading row: dragging over any session in another
+    // group must target that group, and the heading row alone is too narrow to hit reliably.
+    onMount(() => sortable.targetRef(element.parentElement ?? element))
+  }
   return (
     <div ref={sortable.ref} class="min-w-0">
       {props.children(
         <button
-          ref={(element) => {
-            sortable.handleRef(element)
-            onMount(() => sortable.targetRef(element.parentElement!))
-          }}
           type="button"
           aria-label={props.reorderLabel}
-          class="shrink-0 cursor-grab rounded-[4px] text-v2-text-text-faint hover:text-v2-text-text-base focus-visible:outline focus-visible:outline-1 active:cursor-grabbing"
+          title={props.reorderLabel}
+          class="shrink-0 cursor-grab rounded-[4px] p-1 text-v2-text-text-faint hover:text-v2-text-text-base focus-visible:outline focus-visible:outline-1 active:cursor-grabbing"
         >
           <Icon name="menu" size="small" />
         </button>,
+        handleProps,
+        { dropTarget: sortable.isDropTarget, dragSource: sortable.isDragSource },
       )}
     </div>
   )

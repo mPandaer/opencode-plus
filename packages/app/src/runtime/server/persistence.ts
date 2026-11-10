@@ -56,10 +56,8 @@ export const SidebarDirectoryState = Persistence.struct({
   directories: Schema.mutable(Schema.Array(Schema.String)),
   closed: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
   collapsed: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
-  collapsedProjects: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
   directoryOrder: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
   projectOrder: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
-  view: Persistence.optional(Schema.Literals(["directories", "projects", "list"])),
 })
 
 export const WorkingDirectoryState = Persistence.struct({

@@ -218,7 +218,6 @@ function createServerController(
       setSidebarState("closed", (items) => (items ?? []).filter((item) => pathKey(item) !== pathKey(directory)))
       if (!sidebarState.directories.some((item) => pathKey(item) === pathKey(directory)))
         setSidebarState("directories", (items) => [...items, directory])
-      setSidebarState("view", sidebarState.view === "projects" ? "projects" : "directories")
     })
     return true
   }

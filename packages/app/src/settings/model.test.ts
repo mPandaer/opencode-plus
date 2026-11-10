@@ -98,7 +98,6 @@ describe("settings schema", () => {
         newIcons: false,
         foldUserMessages: false,
         newQuestionUI: false,
-        sidebarOrganize: "list",
         mobileTitlebarPosition: "top",
         followUpBehavior: "steer",
       },
@@ -157,8 +156,8 @@ describe("settings schema", () => {
       backgroundActivity: "left",
       timelineWidth: "comfortable",
       newQuestionUI: false,
-      sidebarOrganize: "list",
     })
+    expect(settings.general.sidebarOrganize).toBeUndefined()
     expect(settings.appearance).toEqual({
       fontSize: 14,
       mono: "Custom Mono",

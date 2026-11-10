@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { base64Encode } from "@opencode/util/encode"
+import { seed } from "../utils/app"
 import { fixture } from "../utils/session-fixture"
 import { mockMissingLocation, mockOpenCodeServer } from "../utils/mock-server"
 import { installSseTransport } from "../utils/sse-transport"
@@ -167,6 +168,7 @@ test("directory recovery restores the original path without migrating history", 
       items: [{ id: "msg_original", type: "user", text: "Keep original history", time: { created: 1 } }],
     }),
   })
+  await seed(page, { settings: { appearance: { tabLayout: "directories" } } })
   await mockMissingLocation(page, directory, () => missing)
   page.on("request", (request) => {
     if (request.method() === "POST" && /\/(move|prompt)$/.test(new URL(request.url()).pathname))
@@ -202,6 +204,7 @@ test("a warm-deleted mounted session shows directory recovery after sending", as
       items: [{ id: "msg_warm", type: "user", text: "Warm original history", time: { created: 1 } }],
     }),
   })
+  await seed(page, { settings: { appearance: { tabLayout: "directories" } } })
   await page.goto(`/server/${base64Encode(fixture.serverKey)}/session/${sessionID}`)
   const prompt = page.getByRole("textbox", { name: "Prompt", exact: true })
   await expect(prompt).toBeEditable()
@@ -232,6 +235,7 @@ test("choosing a new location adds a directory without moving the unavailable se
       items: [{ id: "msg_old", type: "user", text: "Original module transcript", time: { created: 1 } }],
     }),
   })
+  await seed(page, { settings: { appearance: { tabLayout: "directories" } } })
   await mockMissingLocation(page, directory)
   page.on("request", (request) => {
     if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/move")) moves.push(request.url())

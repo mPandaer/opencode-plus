@@ -57,9 +57,6 @@ export default function Layout(props: ParentProps) {
 
   const verticalTabs = () => preferences.appearance.tabLayout() !== "horizontal" && !mobile()
 
-  const organizedSidebar = () =>
-    preferences.appearance.tabLayout() === "vertical" && preferences.general.sidebarOrganize() === "projects"
-
   const toggleSidebar = () => preferences.appearance.setSidebarOpen(!preferences.appearance.sidebarOpen())
 
   // How far closed the docked sidebar is, and how far in its peek has it, undefined while it isn't peeking.
@@ -215,7 +212,9 @@ export default function Layout(props: ParentProps) {
         "--sidebar-inset-start": "11px",
         "--sidebar-inset-end": "3px",
         "--sidebar-divider-bleed":
-          preferences.appearance.tabLayout() === "inbox" || organizedSidebar() ? "var(--shell-inline-inset)" : "0px",
+          preferences.appearance.tabLayout() === "inbox" || preferences.appearance.tabLayout() === "directories"
+            ? "var(--shell-inline-inset)"
+            : "0px",
         // A bottom mobile titlebar leaves main's top edge to the safe area. Native Windows chrome supplies the gap;
         // retain outer-outline clearance.
         "--shell-top-inset": bottomTitlebar()
@@ -256,7 +255,7 @@ export default function Layout(props: ParentProps) {
               data-slot="vertical-tabs-panel"
               class="absolute inset-0 overflow-clip [contain:layout_style_paint] [overflow-clip-margin:var(--sidebar-divider-bleed,0px)]"
               classList={{
-                "z-20": organizedSidebar(),
+                "z-20": preferences.appearance.tabLayout() === "directories",
                 "[content-visibility:hidden]": !sidebarMotion.present() && !peek.shown(),
               }}
             >

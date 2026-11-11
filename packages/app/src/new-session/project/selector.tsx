@@ -38,6 +38,7 @@ export type PromptProjectControls = {
   /** Moves the draft to a project; `workspace` is "main", "create", or a worktree directory. */
   select: (directory: string, server?: string, workspace?: string) => void
   add: (title: string, server?: string) => void
+  changeDirectory?: () => void
 }
 
 export function createPromptProjectController(input: { controls: Accessor<PromptProjectControls> }) {
@@ -72,6 +73,7 @@ export function createPromptProjectController(input: { controls: Accessor<Prompt
 
   return {
     selected,
+    changeDirectory: () => input.controls().changeDirectory?.(),
     isSelected: (project: PromptProject) => matches(project, selected()),
     empty: () => input.controls().available.length === 0,
     projects,

@@ -1,5 +1,5 @@
 import { SessionMessage } from "@opencode/schema/session-message"
-import type { SessionMessageUser } from "@opencode/client/promise"
+import { isLocationNotFoundError, type SessionMessageUser } from "@opencode/client/promise"
 import { createEffect, createSignal, onCleanup, untrack, type Accessor } from "solid-js"
 import type { PromptComment } from "./comment-note"
 import type { PromptHistoryComment } from "./history/entry"
@@ -873,6 +873,8 @@ function failSubmission(
 ) {
   if (messageID && session.admitted(messageID)) return true
   restore()
+  // A send captures its Location callback before awaiting; the Location machine rejects a moved or retried target.
+  if (isLocationNotFoundError(error)) session.missingLocation?.(error.location.directory)
   input.notify.failed(kind, error)
 
   return false

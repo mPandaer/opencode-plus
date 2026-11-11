@@ -56,6 +56,7 @@ export type ComposerQueue = {
 export type ComposerSession = {
   id: string
   directory: string
+  missingLocation?: (directory: string) => void
   // The timeline's optimistic prompt: shown on `set` (or `hold` while the send waits for the Location's agents and models),
   // held after `settle` until its admission echo, removed on `clear`.
   handoff: {
@@ -84,9 +85,7 @@ export type ComposerSession = {
     }
   }
   file: {
-    list: (
-      input: Parameters<ServerSDK["api"]["file"]["list"]>[0],
-    ) => Promise<{ data: readonly { path: string }[] }>
+    list: (input: Parameters<ServerSDK["api"]["file"]["list"]>[0]) => Promise<{ data: readonly { path: string }[] }>
   }
   data: {
     location: { command: Pick<Data["location"]["command"], "list"> }

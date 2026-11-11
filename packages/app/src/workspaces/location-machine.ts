@@ -34,9 +34,11 @@ export type LocationSyncEvent =
   | { readonly type: "info.resolved"; readonly attempt: number }
   | { readonly type: "sync.succeeded"; readonly attempt: number }
   | { readonly type: "sync.missing"; readonly attempt: number }
+  | { readonly type: "execution.missing"; readonly attempt: number; readonly location: LocationRef }
   | { readonly type: "sync.failed"; readonly attempt: number }
   | { readonly type: "sync.timed-out"; readonly attempt: number }
   | { readonly type: "retry.due"; readonly attempt: number }
+  | { readonly type: "retry.requested" }
   | { readonly type: "disposed" }
 
 export type LocationSyncEffect =
@@ -59,8 +61,17 @@ export function transitionLocationSync(state: LocationSyncState, event: Location
   if (event.type === "disposed") return { state: { status: "disposed" }, effects: clearTimer(state) }
 
   if (event.type === "target.updated") return targetUpdated(state, event)
+  if (event.type === "retry.requested") return sync(state.location, state.attempt + 1, state.status === "missing")
 
   if (event.attempt !== state.attempt) return unchanged(state)
+
+  if (event.type === "execution.missing") {
+    if (!sameLocationRef(state.location, event.location)) return unchanged(state)
+    return {
+      state: { status: "missing", attempt: state.attempt + 1, location: state.location },
+      effects: clearTimer(state),
+    }
+  }
 
   if (event.type === "retry.due") {
     if (state.status !== "waiting-retry") return unchanged(state)

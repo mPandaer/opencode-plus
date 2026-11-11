@@ -210,6 +210,7 @@ export function createNewSessionComposerAdapter(props: {
                     () => {
                       // The attempt ended first, so the prompt was never sent and the Session is still empty.
                       if (ended.signal.aborted) void data.session.remove(effect.sessionID).catch(() => undefined)
+                      if (!ended.signal.aborted) server.ctx.directories.reveal(effect.sessionID)
 
                       return { type: "session.created", attempt } as const
                     },
@@ -222,6 +223,7 @@ export function createNewSessionComposerAdapter(props: {
 
             if (effect.type === "session.promote") {
               const cleanupReady = startTransition(() => {
+                server.ctx.workingDirectory.remember(effect.directory)
                 local.session.promote(effect.directory, effect.sessionID, {
                   agent: selection.agent,
                   model: selection.model,

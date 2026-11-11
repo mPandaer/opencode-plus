@@ -122,6 +122,7 @@ export function NewSessionView(props: {
                       project={project()}
                       workspace={props.workspace.bar.visible() ? props.workspace.selection.value() : "main"}
                       root={props.workspace.project.root()}
+                      onDirectory={props.project.changeDirectory}
                       branch={<NewSessionBranch workspace={props.workspace} onDone={props.composer.restoreFocus} />}
                       onboarding={onboardingReady() && !onboarding.used && props.workspace.bar.visible()}
                       onClick={() => location()}
@@ -280,6 +281,7 @@ function NewSessionLocation(props: {
   /** "main", "create", or a worktree directory. */
   workspace: string
   root: string
+  onDirectory?: () => void
   branch?: JSX.Element
   onboarding: boolean
   onClick: () => void
@@ -288,7 +290,7 @@ function NewSessionLocation(props: {
 }) {
   const language = useLanguage()
   const command = useCommand()
-  const [layout, setLayout] = createStore({ width: 0, font: "" })
+  const [layout, setLayout] = createStore({ width: 0, font: "", controlWidth: 0 })
 
   command.register("new-session-worktree", () => [
     {
@@ -420,8 +422,8 @@ function NewSessionLocation(props: {
       <Show when={path()} keyed>
         {(directory) => (
           <div
-            class="flex min-w-0 flex-1 justify-end pe-1.5 @max-[560px]:hidden"
-            style={{ "min-width": `min(50%, ${Math.ceil(fitted().minimum) + 6}px)` }}
+            class="flex min-w-0 flex-1 justify-end pe-1.5"
+            style={{ "min-width": `min(100%, ${Math.ceil(fitted().minimum) + 6 + layout.controlWidth}px)` }}
           >
             <Tooltip
               placement="top"
@@ -455,6 +457,18 @@ function NewSessionLocation(props: {
                 </span>
               </span>
             </Tooltip>
+            <Show when={props.onDirectory}>
+              <button
+                type="button"
+                ref={(button) => createResizeObserver(button, () => setLayout("controlWidth", button.offsetWidth))}
+                aria-label={language.t("session.new.directory.change")}
+                title={directory}
+                class={`${TRIGGER} shrink-0`}
+                onClick={props.onDirectory}
+              >
+                <Icon name="folder" size="small" />
+              </button>
+            </Show>
           </div>
         )}
       </Show>

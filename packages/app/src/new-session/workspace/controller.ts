@@ -53,6 +53,7 @@ export function createNewSessionWorkspaceController(input: {
   selectedBranch: () => string | undefined
   setSelectedWorktree: (worktree: string | undefined) => void
   setSelectedBranch: (branch: string | undefined) => void
+  setDirectory: (directory: string) => void
 }) {
   const sdk = useWorkspaceLocation()
   const serverSDK = useServerSDK()
@@ -167,13 +168,9 @@ export function createNewSessionWorkspaceController(input: {
     }),
   )
 
-  // A draft opened from a worktree session keeps that worktree as its directory; Local still runs in the main checkout.
-  const projectRoot = createMemo(
-    () =>
-      data.location.info({ directory: sdk().directory })?.project.canonical ??
-      currentProject()?.worktree ??
-      sdk().directory,
-  )
+  // A new session opens in the session's own directory, not the project's canonical checkout: a chosen
+  // module or managed worktree is a working directory in its own right.
+  const projectRoot = () => sdk().directory
 
   createEffect(() => {
     void Promise.all([
@@ -221,6 +218,10 @@ export function createNewSessionWorkspaceController(input: {
     input.setSelectedBranch(undefined)
     input.setSelectedWorktree(worktree)
     remember(worktree)
+    if (worktree === "main") {
+      const root = data.location.info({ directory: sdk().directory })?.project.canonical
+      if (root) input.setDirectory(root)
+    }
   }
 
   // The remembered worktree may have been removed since it was selected. Cycling to a directory the

@@ -52,6 +52,18 @@ export const ServerState = Persistence.struct({
   projects: Persistence.record(Persistence.array(Persistence.struct({ worktree: Schema.String }))),
 })
 
+export const SidebarDirectoryState = Persistence.struct({
+  directories: Schema.mutable(Schema.Array(Schema.String)),
+  closed: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
+  collapsed: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
+  directoryOrder: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
+  projectOrder: Persistence.optional(Schema.mutable(Schema.Array(Schema.String))),
+})
+
+export const WorkingDirectoryState = Persistence.struct({
+  last: Schema.optional(Schema.String),
+})
+
 export const ModelState = Persistence.struct({
   user: Persistence.array(
     Persistence.struct({

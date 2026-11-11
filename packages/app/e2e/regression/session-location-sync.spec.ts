@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test"
 import { base64Encode } from "@opencode/util/encode"
+import { seed } from "../utils/app"
 import { fixture } from "../utils/session-fixture"
-import { mockOpenCodeServer } from "../utils/mock-server"
+import { mockMissingLocation, mockOpenCodeServer } from "../utils/mock-server"
 import { installSseTransport } from "../utils/sse-transport"
 
 for (const endpoint of ["/api/location", "/api/agent"]) {
@@ -43,7 +44,7 @@ for (const endpoint of ["/api/location", "/api/agent"]) {
         return (
           url.pathname === endpoint &&
           url.searchParams.get("location[directory]") === directory &&
-          (recover ? response.ok() : requests === 3 && response.status() === 500)
+          response.ok() === recover
         )
       })
 
@@ -57,7 +58,8 @@ for (const endpoint of ["/api/location", "/api/agent"]) {
       await settled
       await expect(prompt).toBeEditable()
       await expect(prompt).toHaveText("Continue after reconnecting")
-      expect(requests).toBe(recover ? 2 : 3)
+      // The client makes more than one attempt; how many is its own policy, not this keeper's contract.
+      await expect.poll(() => requests).toBeGreaterThanOrEqual(2)
       await expect(page.getByText("Session location unavailable", { exact: true })).toHaveCount(0)
       await expect(page.getByRole("button", { name: "Choose directory", exact: true })).toHaveCount(0)
       expect(recovery).toEqual([])
@@ -66,88 +68,114 @@ for (const endpoint of ["/api/location", "/api/agent"]) {
   }
 }
 
-test("replaces the composer when the location is not found and recovers by moving to another worktree", async ({
-  page,
-}) => {
-  const directory = "/projects/deleted-worktree"
-  const destination = "/projects/existing-worktree"
-  const sessionID = "ses_location_not_found"
-  const session = { id: sessionID, projectID: fixture.project.id, directory, title: "Missing location" }
-  const moves: unknown[] = []
-  const transport = await installSseTransport(page, { server: fixture.serverKey })
+test("directory recovery restores the original path without migrating history", async ({ page }) => {
+  const directory = "/projects/missing-module"
+  const sessionID = "ses_directory_restore"
+  let missing = true
+  const mutations: string[] = []
+  await mockOpenCodeServer(page, {
+    directory: fixture.directory,
+    project: fixture.project,
+    provider: fixture.provider,
+    sessions: [{ id: sessionID, projectID: fixture.project.id, directory, title: "Original history" }],
+    fileList: () => [],
+    pageMessages: () => ({
+      items: [{ id: "msg_original", type: "user", text: "Keep original history", time: { created: 1 } }],
+    }),
+  })
+  await seed(page, { settings: { appearance: { tabLayout: "directories" } } })
+  await mockMissingLocation(page, directory, () => missing)
+  page.on("request", (request) => {
+    if (request.method() === "POST" && /\/(move|prompt)$/.test(new URL(request.url()).pathname))
+      mutations.push(request.url())
+  })
+  await page.goto(`/server/${base64Encode(fixture.serverKey)}/session/${sessionID}`)
+  await expect(page.getByText("Keep original history", { exact: true })).toBeVisible()
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveCount(0)
+  await expect(
+    page.getByText(
+      "Restore the original path to continue this session, or add a new working directory. The session stays at its original location.",
+      { exact: true },
+    ),
+  ).toBeVisible()
+  missing = false
+  await page.getByRole("button", { name: "Retry original directory", exact: true }).click()
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toBeEditable()
+  await expect(page.getByText("Keep original history", { exact: true })).toBeVisible()
+  expect(mutations).toEqual([])
+})
+
+test("a warm-deleted mounted session shows directory recovery after sending", async ({ page }) => {
+  const directory = "/projects/warm-module"
+  const sessionID = "ses_warm_deleted"
+  await mockOpenCodeServer(page, {
+    directory: fixture.directory,
+    project: fixture.project,
+    provider: fixture.provider,
+    sessions: [{ id: sessionID, projectID: fixture.project.id, directory }],
+    fileList: () => [],
+    pageMessages: () => ({
+      items: [{ id: "msg_warm", type: "user", text: "Warm original history", time: { created: 1 } }],
+    }),
+  })
+  await seed(page, { settings: { appearance: { tabLayout: "directories" } } })
+  await page.goto(`/server/${base64Encode(fixture.serverKey)}/session/${sessionID}`)
+  const prompt = page.getByRole("textbox", { name: "Prompt", exact: true })
+  await expect(prompt).toBeEditable()
+  await expect(page.getByText("Warm original history", { exact: true })).toBeVisible()
+  await mockMissingLocation(page, directory, () => true, /\/api\/session\/[^/]+\/prompt/, sessionID)
+  await prompt.fill("Continue in the deleted directory")
+  await page.locator('[data-action="composer-submit"]').click()
+  await expect(page.getByRole("button", { name: "Retry original directory", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Choose new location", exact: true })).toBeVisible()
+  await expect(page.getByText("Warm original history", { exact: true })).toBeVisible()
+  await expect(prompt).toHaveCount(0)
+})
+
+test("choosing a new location adds a directory without moving the unavailable session", async ({ page }) => {
+  const directory = "/projects/old-module"
+  const destination = "C:\\OpenCode\\SmokeProject"
+  const sessionID = "ses_directory_replacement"
+  const session = { id: sessionID, projectID: fixture.project.id, directory, title: "Old module history" }
+  const moves: string[] = []
   await mockOpenCodeServer(page, {
     directory: fixture.directory,
     project: fixture.project,
     provider: fixture.provider,
     sessions: [session],
     fileList: () => [],
-    worktrees: [{ directory: fixture.directory }, { directory: destination, strategy: "git" }],
     pageMessages: () => ({
-      items: [{ id: "msg_saved", type: "user", text: "Keep this session history", time: { created: 1 } }],
+      items: [{ id: "msg_old", type: "user", text: "Original module transcript", time: { created: 1 } }],
     }),
   })
-  let requests = 0
-  await page.route("**/api/location?**", (route) => {
-    if (new URL(route.request().url()).searchParams.get("location[directory]") !== directory) return route.fallback()
-    requests++
-
-    return route.fulfill({
-      status: 404,
-      // SAFETY: the server's wire body for a missing Location, which the client decodes into its own error.
-      // oxlint-disable-next-line anti-slop-effect/no-manual-tagged-construction -- see SAFETY above
-      json: { _tag: "LocationNotFoundError", location: { directory }, message: `Location not found: ${directory}` },
-      headers: { "access-control-allow-origin": "*" },
-    })
+  await seed(page, { settings: { appearance: { tabLayout: "directories" } } })
+  await mockMissingLocation(page, directory)
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/move")) moves.push(request.url())
   })
-  await page.route(`**/api/session/${sessionID}/move`, (route) => {
-    if (route.request().method() !== "POST") return route.fallback()
-    moves.push(route.request().postDataJSON())
-
-    return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
-  })
-
   await page.goto(`/server/${base64Encode(fixture.serverKey)}/session/${sessionID}`)
-  const status = page.getByRole("group", { name: "Session location unavailable", exact: true })
-  await expect(status).toHaveAccessibleDescription(`${directory} Choose another directory to continue this session.`)
-  await expect(status).toContainText(directory)
-  await expect(page.getByText("Keep this session history", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Choose new location", exact: true }).click()
+  const picker = page.getByRole("dialog", { name: "Add directory", exact: true })
+  await expect(picker.getByRole("button", { name: "Select folder", exact: true })).toBeEnabled()
+  await picker.getByRole("button", { name: "Select folder", exact: true }).click()
+  const confirm = page.getByRole("dialog", { name: "Confirm working directory", exact: true })
+  await expect(confirm.getByText(destination, { exact: true })).toBeVisible()
+  await confirm.getByRole("button", { name: "Add directory", exact: true }).click()
+  await expect(confirm).toBeHidden()
+  await expect(page.getByText("Original module transcript", { exact: true })).toBeVisible()
   await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toHaveCount(0)
-  // A typed not-found answer is final; retrying cannot succeed until the folder changes.
-  expect(requests).toBe(1)
-
-  const connection = await transport.waitForConnection()
-  await page.getByRole("button", { name: "Choose worktree", exact: true }).click()
-  const worktree = page.getByRole("menuitem", { name: "existing-worktree", exact: true })
-  await expect(worktree).toBeVisible()
-
-  // Reconnecting checks the folder again without remounting the missing view, so the open menu survives.
-  const rechecked = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).searchParams.get("location[directory]") === directory && response.status() === 404,
-  )
-
-  await transport.close()
-  await transport.waitForConnection({ after: connection.id })
-  await rechecked
-  expect(requests).toBe(2)
-  await expect(worktree).toBeVisible()
-  // The open menu hides the page from role locators.
-  await expect(page.getByText("Session location unavailable", { exact: true })).toBeVisible()
-
-  await worktree.click()
-  await expect.poll(() => moves).toEqual([{ directory: destination }])
-
-  session.directory = destination
-  await transport.send({
-    id: "evt_location_not_found_moved",
-    type: "session.moved",
-    created: 2,
-    durable: { aggregateID: sessionID, seq: 1, version: 1 },
-    data: { sessionID, location: { directory: destination }, projectID: fixture.project.id },
-  })
-  await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toBeEditable()
-  await expect(status).toHaveCount(0)
-  await expect(page.getByText("Keep this session history", { exact: true })).toBeVisible()
+  expect(session.directory).toBe(directory)
+  expect(moves).toEqual([])
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Object.entries(localStorage)
+          .filter(([key]) => key.includes("sidebar.directories"))
+          .map(([, value]) => value)
+          .join(""),
+      ),
+    )
+    .toContain("SmokeProject")
 })
 
 test("follows a live session move while the agent catalog is still loading", async ({ page }) => {

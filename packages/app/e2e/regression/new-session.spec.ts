@@ -7,6 +7,7 @@ import {
   newSessionLocation,
   newSessionWorktree,
   openDraft,
+  mockWorkspace,
   openSession,
   openWorktreeDraft,
   type WorkspaceInput,
@@ -54,6 +55,88 @@ test.use({
   permissions: ["clipboard-read", "clipboard-write"],
 })
 
+test("global new on first use requires a directory and cancellation leaves Home unchanged", async ({ page }) => {
+  const created: unknown[] = []
+  await mockWorkspace(page, {
+    name: "FirstGlobalDirectory",
+    sessions: [],
+    fileList: () => [],
+    onSessionCreate: (body) => void created.push(body.location),
+  })
+  await page.goto("/")
+  await page.keyboard.press("Control+n")
+  const picker = page.getByRole("dialog")
+  await expect(picker.getByRole("combobox")).toBeEditable()
+  await page.keyboard.press("Escape")
+  await expect(picker).toHaveCount(0)
+  await expect(page).toHaveURL("/")
+  expect(created).toEqual([])
+  await page.keyboard.press("Control+n")
+  const input = picker.getByRole("combobox")
+  await expect(input).toBeEditable()
+  await input.fill("C:/OpenCode/FirstGlobalDirectory/module-a")
+  await input.press("Enter")
+  await picker.getByRole("button", { name: "Select folder", exact: true }).click()
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(
+    /C:[\\/]OpenCode[\\/]FirstGlobalDirectory[\\/]module-a/,
+  )
+  await editor(page).fill("Work in the selected module")
+  await submit(page).click()
+  await expect
+    .poll(() => created)
+    .toEqual([{ directory: expect.stringMatching(/C:[\\/]OpenCode[\\/]FirstGlobalDirectory[\\/]module-a/) }])
+})
+
+test("global new prefers the current session, then remembers the submitted directory across Home settings and reload", async ({
+  page,
+}) => {
+  const root = "C:/OpenCode/GlobalModules"
+  const created: unknown[] = []
+  const view = await openSession(page, {
+    name: "GlobalModules",
+    directory: `${root}/module-a`,
+    project: { worktree: root, canonical: root },
+    fileList: () => [],
+    onSessionCreate: (body) => void created.push(body.location),
+    seed: { storage: { "opencode.global.dat:working-directory": { last: `${root}/older-module` } } },
+  })
+  await view.editor.press("Control+n")
+  const path = page.locator('[data-slot="new-session-location-path"]')
+  await expect(path).toHaveText(`${root}/module-a`)
+  await page.getByRole("button", { name: "Change working directory", exact: true }).click()
+  const picker = page.getByRole("dialog")
+  const input = picker.getByRole("combobox")
+  await expect(input).toBeEditable()
+  await input.fill(`${root}/module-b`)
+  await input.press("Enter")
+  await picker.getByRole("button", { name: "Select folder", exact: true }).click()
+  await expect(path).toHaveText(/C:[\\/]OpenCode[\\/]GlobalModules[\\/]module-b/)
+  await editor(page).fill("Use module B")
+  await submit(page).click()
+  await expect
+    .poll(() => created)
+    .toEqual([{ directory: expect.stringMatching(/C:[\\/]OpenCode[\\/]GlobalModules[\\/]module-b/) }])
+  await expect(editor(page)).toBeEditable()
+  await page.getByRole("button", { name: "Home", exact: true }).click()
+  await expect(page).toHaveURL("/")
+  await page.reload()
+  await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible()
+  await page.keyboard.press("Control+n")
+  await expect(path).toHaveText(/C:[\\/]OpenCode[\\/]GlobalModules[\\/]module-b/)
+  await editor(page).press("Control+,")
+  await expect(page.getByTestId("settings-screen")).toBeVisible()
+  await page.keyboard.press("Control+n")
+  await expect(path).toHaveText(/C:[\\/]OpenCode[\\/]GlobalModules[\\/]module-b/)
+  await editor(page).fill("Continue in module B")
+  await submit(page).click()
+  await expect
+    .poll(() => created)
+    .toEqual([
+      { directory: expect.stringMatching(/C:[\\/]OpenCode[\\/]GlobalModules[\\/]module-b/) },
+      { directory: expect.stringMatching(/C:[\\/]OpenCode[\\/]GlobalModules[\\/]module-b/) },
+    ])
+})
+
 test("the new session screen does not show session details", async ({ page }) => {
   await openDraft(page, { name: "Summary" })
   await expect(page.getByRole("button", { name: "Session details", exact: true })).toHaveCount(0)
@@ -92,31 +175,70 @@ test("the location shortcuts choose worktrees from every state and keep cycling"
   await expect(view.editor).toBeFocused()
 })
 
-test("Local shows and targets the main checkout when the draft opened in a worktree", async ({ page }) => {
-  const root = "C:/OpenCode/LocalFromWorktree"
-
-  const worktree = `${root}/.worktrees/quiet-river`
-
+test("Local preserves a selected subdirectory and lets the user change it before submitting", async ({ page }) => {
+  const root = "C:/OpenCode/Modules"
   const created: unknown[] = []
-
   const view = await openDraft(page, {
-    name: "LocalFromWorktree",
-    project: { sandboxes: [worktree] },
-    worktrees: () => [{ directory: root }, { directory: worktree, strategy: "git" }],
-    vcs: (directory) =>
-      directory === worktree
-        ? { current: "worktree-branch", default: "dev" }
-        : { current: "checkout-branch", default: "dev" },
+    name: "Modules",
+    directory: `${root}/module-a`,
+    project: { worktree: root, canonical: root },
+    fileList: () => [],
     onSessionCreate: (body) => void created.push(body.location),
-    seed: { tabs: [{ draft: "draft_localfromworktree", directory: worktree }] },
   })
 
-  const screen = page.locator('[data-component="new-session"]')
+  const path = page.locator('[data-slot="new-session-location-path"]')
+  await expect(path).toHaveText(`${root}/module-a`)
+  await page.getByRole("button", { name: "Change working directory", exact: true }).click()
+  const picker = page.getByRole("dialog")
+  const input = picker.getByRole("combobox")
+  await expect(input).toBeEditable()
+  await input.fill(`${root}/module-b`)
+  await input.press("Enter")
+  await picker.getByRole("button", { name: "Select folder", exact: true }).click()
+  await expect(path).toHaveText(/C:[\\/]OpenCode[\\/]Modules[\\/]module-b/)
+  await view.editor.fill("Work in module B")
+  await submit(page).click()
+  await expect
+    .poll(() => created)
+    .toEqual([{ directory: expect.stringMatching(/C:[\\/]OpenCode[\\/]Modules[\\/]module-b/) }])
+})
 
-  await expect(newSessionWorktree(page)).toHaveText("Local")
-  await expect(screen.getByText("checkout-branch", { exact: true })).toBeVisible()
-  await expect(screen.getByText("worktree-branch", { exact: true })).toHaveCount(0)
-  await view.editor.fill("Run in the main checkout")
+for (const chosen of ["worktree", "worktree-module"] as const) {
+  test(`Local targets the chosen directory for ${chosen}`, async ({ page }) => {
+    const root = "C:/OpenCode/RegisteredModule"
+    const worktree = `${root}/.worktrees/river`
+    const directory = chosen === "worktree" ? worktree : `${worktree}/module-a`
+    const created: unknown[] = []
+    const view = await openDraft(page, {
+      name: "RegisteredModule",
+      directory,
+      project: { worktree: root, canonical: root, sandboxes: [worktree] },
+      worktrees: () => [{ directory: root }, { directory: worktree, strategy: "git" }],
+      onSessionCreate: (body) => void created.push(body.location),
+    })
+    await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(directory)
+    await view.editor.fill("Use the intended directory")
+    await submit(page).click()
+    await expect.poll(() => created).toEqual([{ directory }])
+  })
+}
+
+test("an explicit checkout selection leaves the module", async ({ page }) => {
+  const root = "C:/OpenCode/CheckoutSelection"
+  const created: unknown[] = []
+  const view = await openDraft(page, {
+    name: "CheckoutSelection",
+    directory: `${root}/module-a`,
+    project: { worktree: root, canonical: root },
+    worktrees: () => [{ directory: root }],
+    onSessionCreate: (body) => void created.push(body.location),
+  })
+  await expect(page.getByRole("button", { name: "Change working directory", exact: true })).toBeVisible()
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(`${root}/module-a`)
+  await newSessionWorktree(page).click()
+  await page.getByRole("option", { name: /CheckoutSelection C:\/OpenCode\/CheckoutSelection$/ }).click()
+  await expect(page.locator('[data-slot="new-session-location-path"]')).toHaveText(root)
+  await view.editor.fill("Use the checkout explicitly")
   await submit(page).click()
   await expect.poll(() => created).toEqual([{ directory: root }])
 })
@@ -255,6 +377,14 @@ for (const row of [
     const path = page.locator('[data-slot="new-session-location-path"]')
     await expect(path).toHaveText(row.pattern)
     await expect.poll(() => path.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+    const change = page.getByRole("button", { name: "Change working directory", exact: true })
+    await expect(change).toHaveAttribute("title", row.directory)
+    for (const width of [480, 1000, 600]) {
+      await page.setViewportSize({ width, height: 700 })
+      await expect(path).toBeVisible()
+      await expect(change).toBeInViewport()
+      await expect.poll(() => path.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+    }
     await path.hover()
     await expect(page.getByRole("tooltip")).toHaveText(row.directory)
 

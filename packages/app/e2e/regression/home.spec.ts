@@ -36,8 +36,8 @@ test("Home keeps the session list in every interface mode", async ({ page }) => 
   await expect(search).toBeVisible()
   await expect(row(page, earlier.title)).toBeVisible()
 
-  // The Inbox mode moves session tabs into the sidebar inbox; Home stays the session list.
-  for (const mode of ["Side tabs", "Inbox", "Top tabs"]) {
+  // The Inbox and Directories modes move the tab area into the sidebar; Home stays the session list.
+  for (const mode of ["Side tabs", "Inbox", "Top tabs", "Directories"]) {
     await page.keyboard.press("Control+,")
     const settings = page.getByTestId("settings-screen")
     const option = settings.getByRole("radio", { name: mode, exact: true })

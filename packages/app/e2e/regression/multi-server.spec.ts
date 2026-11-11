@@ -122,6 +122,52 @@ const reply = (sessionID: string, permissionID: string) => ({
   body: { decision: "once" },
 })
 
+test("global new keeps each server's last working directory independent", async ({ page }) => {
+  const creates: { server: string; location: unknown }[] = []
+  await setup(page, {
+    tabs: [sessionA.id, { session: sessionB.id, server: REMOTE_SERVER }],
+    a: { onSessionCreate: (body) => void creates.push({ server: SERVER, location: body.location }) },
+    b: { onSessionCreate: (body) => void creates.push({ server: REMOTE_SERVER, location: body.location }) },
+  })
+  await seed(page, {
+    usedProjects: { local: ["proj_server-a"], [REMOTE_SERVER]: ["proj_server-b"] },
+    storage: { "opencode.global.dat:layout": { home: { selection: { server: REMOTE_SERVER } } } },
+  })
+  await page.goto(sessionHref(sessionA.id))
+  await expectSessionTitle(page, sessionA.title)
+  await page.locator(`[data-titlebar-tab-link][href="${sessionHref(sessionB.id, REMOTE_SERVER)}"]`).click()
+  await expectSessionTitle(page, sessionB.title)
+  await page.getByRole("button", { name: "Home", exact: true }).click()
+  await expect(page).toHaveURL("/")
+  await page.keyboard.press("Control+n")
+  const path = page.locator('[data-slot="new-session-location-path"]')
+  await expect(path).toHaveText(directoryB)
+  await page.locator('[data-component="composer-editor"]').fill("Use server B")
+  await page.locator('[data-action="composer-submit"]').click()
+  await expect.poll(() => creates).toEqual([{ server: REMOTE_SERVER, location: { directory: directoryB } }])
+  await page.locator(`[data-titlebar-tab-link][href="${sessionHref(sessionA.id)}"]`).click()
+  await expectSessionTitle(page, sessionA.title)
+  await page.getByRole("button", { name: "Home", exact: true }).click()
+  await expect(page).toHaveURL("/")
+  await page.getByRole("button", { name: /This computer/ }).click()
+  await page.reload()
+  await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible()
+  await page.keyboard.press("Control+n")
+  await expect(path).toHaveText(directoryA)
+  await page.locator('[data-component="composer-editor"]').fill("Use server A")
+  await page.locator('[data-action="composer-submit"]').click()
+  await expect
+    .poll(() => creates)
+    .toEqual([
+      { server: REMOTE_SERVER, location: { directory: directoryB } },
+      { server: SERVER, location: { directory: directoryA } },
+    ])
+  await page.getByRole("button", { name: "Home", exact: true }).click()
+  await page.getByRole("button", { name: /127\.0\.0\.1:4097/ }).click()
+  await page.keyboard.press("Control+n")
+  await expect(path).toHaveText(directoryB)
+})
+
 test("settings opened from a remote session sweep every server and keep the remote scope", async ({ page }) => {
   // Server A has no tab and is never visited: its pending request proves one toggle sweeps every connected server.
   const view = await setup(page, { tabs: [], a: { permissions: [pending("permission-pending-a", sessionA.id)] } })

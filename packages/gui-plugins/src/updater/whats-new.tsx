@@ -127,7 +127,10 @@ function normalizeVersion(value: string | undefined) {
 
   if (!text) return
 
-  return text.startsWith("v") || text.startsWith("V") ? text.slice(1) : text
+  const version = text.startsWith("v") || text.startsWith("V") ? text.slice(1) : text
+
+  // A fork release keeps upstream's content: `2.2.7-plus.1` reads the notes for `2.2.7`.
+  return version.replace(/-plus\.\d+$/, "")
 }
 
 function sliceHighlights(list: { tag?: string; highlights: Highlight[] }[], current: string, previous: string) {

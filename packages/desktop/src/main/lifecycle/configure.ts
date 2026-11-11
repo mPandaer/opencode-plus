@@ -21,6 +21,8 @@ export function configureApplication() {
   } catch {}
 
   process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI = "true"
+  // The desktop app owns updates: the bundled CLI must never install an upstream CLI behind it.
+  process.env.OPENCODE_DISABLE_AUTOUPDATE = "1"
 
   app.setName(APP_NAME)
   app.setAppUserModelId(APP_ID)

@@ -17,6 +17,7 @@
     "migration": "bun run script/migration.ts",
     "build": "bun run script/build.ts",
     "pack": "bun run script/pack.ts",
+    "release:plus": "bun run script/release-plus.ts",
     "preview": "electron-vite preview"
   },
   "main": "./out/main/index.js",

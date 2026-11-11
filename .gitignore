@@ -27,6 +27,8 @@ a.out
 target
 .scripts
 .cache
+# Bun's build cache, written under packages/cli by the CLI build.
+.bun-cache
 .direnv/
 
 # Local dev files

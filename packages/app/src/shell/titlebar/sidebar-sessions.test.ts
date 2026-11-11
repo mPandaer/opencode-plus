@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
 import type { OpenCodeEvent, SessionInfo } from "@opencode/client/promise"
-import { createSidebarSessionActivity, isSidebarSessionActivity, mergeSidebarSessions } from "./sidebar-sessions"
+import { compareSessionAttention, createSidebarAttention, isSidebarAttention } from "./sidebar-sessions"
 
-const session: SessionInfo = {
+const base: SessionInfo = {
   id: "ses_sidebar",
   projectID: "project",
   cost: 0,
@@ -12,81 +12,109 @@ const session: SessionInfo = {
   location: { directory: "/project" },
 }
 
-test.each([5, 50])("loading metadata with timestamp %i does not move an indexed session", (updated) => {
-  expect(
-    mergeSidebarSessions(
-      [session],
-      [{ ...session, title: "Loaded title", time: { created: 1, updated } }],
-      () => undefined,
-    ),
-  ).toEqual([{ ...session, title: "Loaded title" }])
-})
-
-test("includes newly created sessions that are not in the fetched index yet", () => {
-  const created = { ...session, id: "ses_new", time: { created: 20, updated: 20 } }
-
-  expect(mergeSidebarSessions([session], [created], () => undefined)).toEqual([session, created])
-})
-
-test("real activity advances the indexed timestamp without treating loaded metadata as activity", () => {
-  expect(mergeSidebarSessions([session], [{ ...session, time: { created: 1, updated: 100 } }], () => 50)).toEqual([
-    { ...session, time: { created: 1, updated: 50 } },
-  ])
-})
-
 const envelope = {
   id: "evt_sidebar",
   created: 50,
-  durable: { aggregateID: session.id, seq: 1, version: 1 as const },
+  durable: { aggregateID: base.id, seq: 1, version: 1 as const },
 }
 
-test("records the first activity for a previously unseen server and session", () => {
-  const activity = createSidebarSessionActivity()
+const prompt = {
+  ...envelope,
+  type: "session.inbox.enqueued",
+  data: {
+    sessionID: base.id,
+    inboxID: "msg_sidebar",
+    item: { type: "user", payload: { text: "Hello" }, delivery: "steer" },
+  },
+} satisfies OpenCodeEvent
 
-  expect(activity.get("server", session.id)).toBeUndefined()
-  activity.update("server", { ...envelope, type: "session.viewed", data: { sessionID: session.id, idle: 10 } })
-  expect(activity.get("server", session.id)).toBeUndefined()
-  activity.update("server", {
-    ...envelope,
-    type: "session.inbox.enqueued",
-    data: {
-      sessionID: session.id,
-      inboxID: "msg_sidebar",
-      item: { type: "user", payload: { text: "Hello" }, delivery: "steer" },
-    },
-  })
-  expect(activity.get("server", session.id)).toBe(50)
+test("records the newest prompt for a previously unseen server and session", () => {
+  const attention = createSidebarAttention()
+
+  expect(attention.get("server", base.id)).toBeUndefined()
+  attention.update("server", prompt)
+  expect(attention.get("server", base.id)).toBe(50)
+  attention.update("server", { ...prompt, created: 40 })
+  expect(attention.get("server", base.id)).toBe(50)
 })
 
 test.each([
-  { event: { ...envelope, type: "session.viewed", data: { sessionID: session.id, idle: 10 } }, expected: false },
+  { event: { ...envelope, type: "session.viewed", data: { sessionID: base.id, idle: 10 } }, expected: false },
+  {
+    event: { ...envelope, type: "session.metadata.updated", data: { sessionID: base.id, metadata: { a: 1 } } },
+    expected: false,
+  },
+  {
+    event: { ...envelope, type: "session.agent.selected", data: { sessionID: base.id, agent: "build" } },
+    expected: false,
+  },
+  {
+    event: { ...envelope, type: "session.renamed", data: { sessionID: base.id, title: "New title" } },
+    expected: false,
+  },
   {
     event: {
       ...envelope,
-      type: "session.metadata.updated",
-      data: { sessionID: session.id, metadata: { viewed: true } },
+      type: "session.step.started",
+      data: {
+        sessionID: base.id,
+        assistantMessageID: "msg_step",
+        agent: "build",
+        model: { providerID: "provider", id: "model" },
+        started: 50,
+      },
     },
     expected: false,
   },
   {
-    event: { ...envelope, type: "session.agent.selected", data: { sessionID: session.id, agent: "build" } },
-    expected: false,
-  },
-  {
     event: {
       ...envelope,
-      type: "session.model.selected",
-      data: { sessionID: session.id, model: { providerID: "provider", id: "model" } },
+      type: "session.inbox.enqueued",
+      data: {
+        sessionID: base.id,
+        inboxID: "msg_compaction",
+        item: { type: "compaction", payload: {}, delivery: "steer" },
+      },
     },
     expected: false,
   },
-  {
-    event: { ...envelope, type: "session.renamed", data: { sessionID: session.id, title: "New title" } },
-    expected: true,
-  },
+  { event: prompt, expected: true },
 ] satisfies { event: OpenCodeEvent; expected: boolean }[])(
-  "$event.type counts as sidebar activity: $expected",
+  "$event.type counts as sidebar attention: $expected",
   ({ event, expected }) => {
-    expect(isSidebarSessionActivity(event)).toBe(expected)
+    expect(isSidebarAttention(event)).toBe(expected)
   },
 )
+
+test("orders by the prompt that began the run, not by assistant steps", () => {
+  const stepped = { ...base, id: "ses_stepped", time: { created: 1, updated: 900, busy: 10 } }
+  const prompted = { ...base, id: "ses_prompted", time: { created: 2, updated: 20, busy: 20 } }
+
+  expect([stepped, prompted].toSorted((a, b) => compareSessionAttention(a, b, () => undefined))).toEqual([
+    prompted,
+    stepped,
+  ])
+})
+
+test("a prompt steered into a running session outranks every run that started earlier", () => {
+  const running = { ...base, id: "ses_running", time: { created: 1, updated: 20, busy: 20 } }
+  const steered = { ...base, id: "ses_steered", time: { created: 2, updated: 10, busy: 10 } }
+  const prompted = (id: string) => (id === steered.id ? 30 : undefined)
+
+  expect([steered, running].toSorted((a, b) => compareSessionAttention(a, b, prompted))).toEqual([steered, running])
+})
+
+test("a session the user never prompted falls back to when it was created", () => {
+  const empty = { ...base, id: "ses_empty", time: { created: 30, updated: 30 } }
+  const older = { ...base, id: "ses_older", time: { created: 1, updated: 20, busy: 20 } }
+
+  expect([older, empty].toSorted((a, b) => compareSessionAttention(a, b, () => undefined))).toEqual([empty, older])
+})
+
+test("equal attention breaks by creation time and then by descending ID", () => {
+  const a = { ...base, id: "ses_a", time: { created: 10, updated: 10 } }
+  const b = { ...base, id: "ses_b", time: { created: 10, updated: 10 } }
+  const newer = { ...base, id: "ses_newer", time: { created: 20, updated: 20 } }
+
+  expect([a, b, newer].toSorted((x, y) => compareSessionAttention(x, y, () => undefined))).toEqual([newer, b, a])
+})

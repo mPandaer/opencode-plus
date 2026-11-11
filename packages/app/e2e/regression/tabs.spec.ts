@@ -1005,15 +1005,30 @@ test("directory groups drag in shared order and keep folded layouts after activi
       project({ id: "proj_hidden_order", directory: "C:/Quiet", name: "Hidden" }),
     ],
     sessions: [
-      { id: "ses_order_api", title: "API recent", directory: `${root}/api`, time: { created: T0, updated: T0 + 30 } },
-      { id: "ses_order_web", title: "Web work", directory: `${root}/web`, time: { created: T0, updated: T0 + 20 } },
-      { id: "ses_order_old", title: "API older", directory: `${root}/api`, time: { created: T0, updated: T0 + 10 } },
+      {
+        id: "ses_order_api",
+        title: "API recent",
+        directory: `${root}/api`,
+        time: { created: T0, updated: T0 + 30, busy: T0 + 30 },
+      },
+      {
+        id: "ses_order_web",
+        title: "Web work",
+        directory: `${root}/web`,
+        time: { created: T0, updated: T0 + 20, busy: T0 + 20 },
+      },
+      {
+        id: "ses_order_old",
+        title: "API older",
+        directory: `${root}/api`,
+        time: { created: T0, updated: T0 + 10, busy: T0 + 10 },
+      },
       {
         id: "ses_order_hidden",
         title: "Hidden work",
         directory: "C:/Quiet",
         projectID: "proj_hidden_order",
-        time: { created: T0, updated: T0 + 5 },
+        time: { created: T0, updated: T0 + 5, busy: T0 + 5 },
       },
       { id: "ses_order_other", title: "Other work", directory: "C:/OtherOrder", projectID: "proj_other_order" },
     ],
@@ -1075,10 +1090,14 @@ test("directory groups drag in shared order and keep folded layouts after activi
     {
       id: "evt_order_activity",
       durable: { aggregateID: "ses_order_old", seq: 1, version: 1 },
-      type: "session.renamed",
+      type: "session.inbox.enqueued",
       created: T0 + 100,
-      data: { sessionID: "ses_order_old", title: "API older" },
-    },
+      data: {
+        sessionID: "ses_order_old",
+        inboxID: "inb_order_activity",
+        item: { type: "user", payload: { text: "Go" }, delivery: "steer" },
+      },
+    } as OpenCodeEvent,
   ])
   await expect(group(`${root}/api`).getByRole("button", { name: /API (older|recent)/ })).toHaveText([
     /API older/,
@@ -1100,13 +1119,13 @@ test("directory groups drop over another group's session band", async ({ page })
         id: "ses_band_alpha",
         title: "Alpha session",
         directory: `${root}/alpha`,
-        time: { created: T0, updated: T0 + 20 },
+        time: { created: T0, updated: T0 + 20, busy: T0 + 20 },
       },
       {
         id: "ses_band_beta",
         title: "Beta session",
         directory: `${root}/beta`,
-        time: { created: T0, updated: T0 + 10 },
+        time: { created: T0, updated: T0 + 10, busy: T0 + 10 },
       },
     ],
     seed: { settings: { appearance: { tabLayout: "directories" } }, tabs: ["ses_band_alpha"] },
@@ -1128,6 +1147,84 @@ test("directory groups drop over another group's session band", async ({ page })
     group("alpha").getByText("Alpha session", { exact: true }),
   )
   await expect.poll(directoryOrder).toEqual([`${root}/beta`, `${root}/alpha`])
+})
+
+test("directory sidebar ranks sessions by the last prompt, not by assistant steps", async ({ page }) => {
+  const name = "Attention"
+  const directory = `C:/OpenCode/${name}`
+  const workspace = await mockWorkspace(page, {
+    name,
+    sessions: [
+      {
+        id: "ses_attention_old",
+        title: "Older prompt",
+        time: { created: T0, updated: T0 + 10, busy: T0 + 10 },
+      },
+      {
+        id: "ses_attention_recent",
+        title: "Newer prompt",
+        time: { created: T0, updated: T0 + 20, busy: T0 + 20 },
+      },
+      { id: "ses_attention_idle", title: "Never prompted", time: { created: T0 + 5, updated: T0 + 5 } },
+    ],
+    seed: { settings: { appearance: { tabLayout: "directories" } }, tabs: ["ses_attention_recent"] },
+  })
+  await page.goto(sessionHref("ses_attention_recent"))
+  const group = page
+    .locator('[data-slot="vertical-tabs-sidebar"]')
+    .getByRole("group", { name: directory, exact: true })
+  const order = () =>
+    group.locator("[data-session-id]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-session-id")))
+  await expect.poll(order).toEqual(["ses_attention_recent", "ses_attention_old", "ses_attention_idle"])
+
+  // The older session takes a step after the newer one, and the never-prompted session gets a prompt that carries
+  // an earlier timestamp than that step. Steps are not attention, so only the prompt moves its session.
+  await workspace.push([
+    // SAFETY: the fixture event matches the generated OpenCodeEvent shape for its type.
+    {
+      id: "evt_attention_step",
+      created: T0 + 5000,
+      type: "session.step.started",
+      durable: { aggregateID: "ses_attention_old", seq: 1, version: 1 },
+      location: { directory },
+      data: {
+        sessionID: "ses_attention_old",
+        assistantMessageID: "msg_attention_step",
+        agent: "build",
+        model: { providerID: "opencode", id: "test" },
+        started: T0 + 5000,
+      },
+    } as OpenCodeEvent,
+    // SAFETY: the fixture event matches the generated OpenCodeEvent shape for its type.
+    {
+      id: "evt_attention_prompt",
+      created: T0 + 4000,
+      type: "session.inbox.enqueued",
+      durable: { aggregateID: "ses_attention_idle", seq: 1, version: 1 },
+      location: { directory },
+      data: {
+        sessionID: "ses_attention_idle",
+        inboxID: "inb_attention_prompt",
+        item: { type: "user", payload: { text: "Go" }, delivery: "queue" },
+      },
+    } as OpenCodeEvent,
+  ])
+  await expect.poll(order).toEqual(["ses_attention_idle", "ses_attention_recent", "ses_attention_old"])
+
+  // A rename replaces the stored session object. The row keeps its place and shows the new title.
+  await workspace.push([
+    // SAFETY: the fixture event matches the generated OpenCodeEvent shape for its type.
+    {
+      id: "evt_attention_rename",
+      created: T0 + 6000,
+      type: "session.renamed",
+      durable: { aggregateID: "ses_attention_old", seq: 2, version: 1 },
+      location: { directory },
+      data: { sessionID: "ses_attention_old", title: "Renamed prompt" },
+    } as OpenCodeEvent,
+  ])
+  await expect(group.getByRole("button", { name: "Renamed prompt", exact: true })).toBeVisible()
+  await expect.poll(order).toEqual(["ses_attention_idle", "ses_attention_recent", "ses_attention_old"])
 })
 
 test("the project title adds a working directory without creating a session", async ({ page }) => {

@@ -1,67 +1,49 @@
 import type { OpenCodeEvent, SessionInfo } from "@opencode/client/promise"
 import { createStore } from "solid-js/store"
-import { mergeHomeSessionIndex } from "@/home/sessions/index"
 
-const activityTypes = [
-  "session.inbox.enqueued",
-  "session.step.started",
-  "session.step.ended",
-  "session.step.failed",
-  "session.renamed",
-  "session.moved",
-  "session.archived",
-  "session.unarchived",
-  "session.revert.staged",
-  "session.revert.cleared",
-  "session.revert.committed",
-] as const satisfies OpenCodeEvent["type"][]
-
-// Passive metadata and agent/model selection sync must not promote a session just because it was opened.
-export function isSidebarSessionActivity(
+// A session moves up the sidebar when the user asks it something. Assistant steps, passive metadata, renames and
+// reverts are not the user's attention: two sessions working at once must not overtake each other between prompts.
+export function isSidebarAttention(
   event: OpenCodeEvent,
-): event is Extract<OpenCodeEvent, { type: (typeof activityTypes)[number] }> {
-  return activityTypes.some((type) => type === event.type)
+): event is Extract<OpenCodeEvent, { type: "session.inbox.enqueued" }> {
+  return event.type === "session.inbox.enqueued" && event.data.item.type === "user"
 }
 
-export function createSidebarSessionActivity() {
-  const [activity, setActivity] = createStore<Record<string, Record<string, number | undefined>>>({})
+export function createSidebarAttention() {
+  const [prompted, setPrompted] = createStore<Record<string, Record<string, number | undefined>>>({})
 
   return {
     get(server: string, sessionId: string) {
-      return activity[server]?.[sessionId]
+      return prompted[server]?.[sessionId]
     },
     update(server: string, event: OpenCodeEvent) {
-      if (!isSidebarSessionActivity(event)) return
-      setActivity(server, (sessions) => ({
+      if (!isSidebarAttention(event)) return
+      setPrompted(server, (sessions) => ({
         ...sessions,
         [event.data.sessionID]: Math.max(sessions?.[event.data.sessionID] ?? 0, event.created),
       }))
-
-      return event
     },
   }
 }
 
-// Loading a tab refreshes its metadata, not its place in the project list. Activity events are applied afterward.
-export function mergeSidebarSessions(
-  indexed: SessionInfo[],
-  known: SessionInfo[],
-  activity: (id: string) => number | undefined,
+// `busy` records the execution the prompt began, and an execution starts once per busy period, so it survives a
+// reload where the event stream does not. A prompt steered into a run that already started is only in that stream,
+// and a session the user never prompted falls back to when it was created.
+export function sessionAttention(session: SessionInfo, prompted: number | undefined) {
+  return Math.max(session.time.created, session.time.busy ?? 0, prompted ?? 0)
+}
+
+export function compareSessionAttention(
+  a: SessionInfo,
+  b: SessionInfo,
+  prompted: (id: string) => number | undefined,
 ) {
-  const timestamps = new Map(indexed.map((session) => [session.id, session.time.updated]))
+  const attention = sessionAttention(b, prompted(b.id)) - sessionAttention(a, prompted(a.id))
+  if (attention !== 0) return attention
 
-  return mergeHomeSessionIndex(
-    indexed,
-    known.map((session) => {
-      const updated = timestamps.get(session.id)
+  const created = b.time.created - a.time.created
+  if (created !== 0) return created
 
-      return updated === undefined ? session : { ...session, time: { ...session.time, updated } }
-    }),
-  ).map((session) => {
-    const updated = activity(session.id)
-
-    return updated !== undefined && updated > session.time.updated
-      ? { ...session, time: { ...session.time, updated } }
-      : session
-  })
+  // Server lists break equal timestamps by descending ID, so the sidebar keeps that order when attention ties.
+  return a.id < b.id ? 1 : a.id > b.id ? -1 : 0
 }

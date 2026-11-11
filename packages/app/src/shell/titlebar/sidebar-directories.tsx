@@ -1,5 +1,6 @@
 import {
   batch,
+  createComputed,
   createEffect,
   createMemo,
   For,
@@ -27,8 +28,10 @@ import { Menu } from "@opencode/ui/menu"
 import { Loader } from "@opencode/ui/loader"
 import { TextField } from "@opencode/ui/text-field"
 import { MenuScroll } from "@opencode/ui/menu-scroll"
+import { slideFrom } from "@opencode/ui/motion"
 import { isLocationNotFoundError, type SessionInfo } from "@opencode/client/promise"
 import { containsDirectory } from "@opencode/util/path"
+import { mergeHomeSessionIndex } from "@/home/sessions/index"
 import { useLanguage } from "@/runtime/i18n/language"
 import { ServerConnection, useServers } from "@/runtime/server/registry"
 import { useServerCtx, type ServerCtx } from "@/runtime/server/runtime"
@@ -39,7 +42,7 @@ import { createProjectSessionActions } from "@/shell/tabs/project-sessions"
 import { pathKey } from "@/workspaces/path-key"
 import { ProjectSessionRow } from "./project-session-row"
 import { DirectoryAdd } from "./directory-add"
-import { createSidebarSessionActivity, mergeSidebarSessions } from "./sidebar-sessions"
+import { compareSessionAttention, createSidebarAttention } from "./sidebar-sessions"
 import "./sidebar-directories.css"
 
 export function SidebarDirectories(props: {
@@ -81,7 +84,7 @@ function DirectorySidebar(props: {
   const language = useLanguage()
   const tabs = useTabs()
   const actions = createProjectSessionActions()
-  const activity = createSidebarSessionActivity()
+  const attention = createSidebarAttention()
   const server = ServerConnection.key(props.ctx.sdk.server)
   const [local, setLocal] = createStore({
     search: "",
@@ -113,13 +116,11 @@ function DirectorySidebar(props: {
     retry: false,
     staleTime: 30_000,
   }))
+  const prompted = (id: string) => attention.get(server, id)
   const sessions = createMemo(() =>
     props.ctx.data.session
-      .apply(
-        mergeSidebarSessions(history.data?.() ?? [], props.ctx.data.session.list(), (id) => activity.get(server, id)),
-        { activity: false },
-      )
-      .toSorted((a, b) => b.time.updated - a.time.updated),
+      .apply(mergeHomeSessionIndex(history.data?.() ?? [], props.ctx.data.session.list()), { activity: false })
+      .toSorted((a, b) => compareSessionAttention(a, b, prompted)),
   )
   const grouped = createMemo(() => Map.groupBy(sessions(), (session) => pathKey(session.location.directory)))
   const directories = createMemo(() =>
@@ -232,7 +233,7 @@ function DirectorySidebar(props: {
   }
   const reorderDirectories = (items: string[]) => reorder("directoryOrder", items.map(pathKey))
 
-  onCleanup(props.ctx.data.listen(({ details }) => activity.update(server, details)))
+  onCleanup(props.ctx.data.listen(({ details }) => attention.update(server, details)))
   createEffect(() => {
     if (!ready()) return
     // Closing is an explicit preference, so historical discovery must never resurrect it.
@@ -259,6 +260,39 @@ function DirectorySidebar(props: {
       retry: false,
       staleTime: 0,
     }))
+    let group: HTMLDivElement | undefined
+    let painted: Map<string, DOMRect> | undefined
+    let order = ""
+    const list = () => visibleSessions().get(pathKey(directory)) ?? []
+    const rows = () => Array.from(group?.querySelectorAll<HTMLElement>("[data-session-id]") ?? [])
+
+    // Reads the order while the keyed list still shows the previous one. A computation runs before the list moves its
+    // nodes, so these rectangles are the layout the user is looking at.
+    createComputed(() => {
+      const next = list()
+        .map((session) => session.id)
+        .join("\n")
+      if (next === order) return
+      order = next
+      painted = new Map(rows().map((row) => [row.dataset.sessionId!, row.getBoundingClientRect()]))
+    })
+
+    // Once the nodes have moved, play the difference back as a short slide instead of a jump.
+    createEffect(() => {
+      list()
+      queueMicrotask(() => {
+        const previous = painted
+        painted = undefined
+        if (!previous || !group?.isConnected) return
+        for (const row of rows()) {
+          const rect = previous.get(row.dataset.sessionId!)
+          if (!rect) continue
+          const current = row.getBoundingClientRect()
+          if (current.top === rect.top && current.left === rect.left) continue
+          slideFrom(row, rect, { duration: 180 })
+        }
+      })
+    })
     return (
       <SortableGroup
         id={pathKey(directory)}
@@ -267,7 +301,12 @@ function DirectorySidebar(props: {
       >
         {(handle, handleProps, dragState) => (
           <>
-            <div role="group" aria-label={directory} class="sidebar-directory flex min-w-0 flex-col gap-[2px]">
+            <div
+              ref={(element) => (group = element)}
+              role="group"
+              aria-label={directory}
+              class="sidebar-directory flex min-w-0 flex-col gap-[2px]"
+            >
               <div
                 ref={handleProps}
                 class="sidebar-directory-heading flex min-w-0 cursor-grab items-center gap-2 rounded-[6px] px-2 py-1 text-13-medium text-v2-text-text-base active:cursor-grabbing"
@@ -340,25 +379,27 @@ function DirectorySidebar(props: {
                 </div>
               </Show>
               <Show when={!state.collapsed?.includes(pathKey(directory))}>
-                <For each={visibleSessions().get(pathKey(directory)) ?? []}>
+                {/* Rows key by session ID: the sync store replaces session objects wholesale, so reference-keyed rows
+                    would be disposed and re-created on every session update. */}
+                <Key each={list()} by={(session: SessionInfo) => session.id}>
                   {(session) => (
                     <ProjectSessionRow
                       server={server}
-                      session={session}
+                      session={session()}
                       openTab={tabs.store.some(
-                        (tab) => tab.type === "session" && tab.server === server && tab.sessionId === session.id,
+                        (tab) => tab.type === "session" && tab.server === server && tab.sessionId === session().id,
                       )}
                       active={
                         props.currentTab?.type === "session" &&
                         props.currentTab.server === server &&
-                        props.currentTab.sessionId === session.id
+                        props.currentTab.sessionId === session().id
                       }
                       onOpen={() =>
-                        actions.openProjectSession(props.ctx.sdk.server, directory, session, { preview: true })
+                        actions.openProjectSession(props.ctx.sdk.server, directory, session(), { preview: true })
                       }
                     />
                   )}
-                </For>
+                </Key>
               </Show>
             </div>
           </>

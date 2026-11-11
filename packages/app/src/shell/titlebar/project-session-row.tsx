@@ -120,6 +120,7 @@ export function ProjectSessionRow(props: {
         as="button"
         type="button"
         data-titlebar-tab-action
+        data-session-id={props.session.id}
         data-state={props.active ? "pressed" : undefined}
         class="relative isolate flex h-6 w-full shrink-0 items-center gap-2 rounded-[6px] ps-5 pe-2 text-start text-[13px] leading-[var(--line-height-compact)] font-medium focus-visible:outline-none"
         classList={{ "text-v2-text-text-base": props.active, "text-v2-text-text-muted": !props.active }}

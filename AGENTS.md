@@ -48,7 +48,7 @@ For user-facing `feat`, `fix` and `perf` PRs, add a small looping animated SVG o
 
 ## Fork Updates
 
-This repository ships its own desktop releases. See [ADR 0002](docs/adr/0002-fork-releases.md).
+This repository ships its own desktop releases. Before changing the fork delta or publishing, read [docs/agents/fork-releases.md](docs/agents/fork-releases.md). The rules behind it are in [ADR 0002](docs/adr/0002-fork-releases.md).
 
 - `plus` is the only long-lived branch: the upstream release tag plus the fork delta. Rebase it onto the latest upstream release tag (`v<version>`), never onto `origin/dev`; the dev-based rules above apply to changes intended for upstream, and this fork does not upstream.
 - Keep the delta a handful of logical commits. A fix needed before its release may be cherry-picked with the upstream commit sha in the message, and is dropped at the next rebase.
@@ -244,3 +244,8 @@ them, read docs/agents/issue-tracker.md.
 
 Use a single-context glossary and ADR layout. Before exploring domain behavior,
 read docs/agents/domain.md.
+
+### Fork releases
+
+Before changing the fork delta, rebasing onto an upstream release, or publishing a
+desktop build, read docs/agents/fork-releases.md.

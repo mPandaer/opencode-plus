@@ -36,3 +36,5 @@ What's New matches the upstream changelog by the base version, stripping `-plus.
 - `working_directories` graduates: directory validation becomes unconditional and the flag and its `Location.Info.experimental.flags` payload are removed, so the mode no longer depends on user configuration. See the amendment to [0001](0001-directories-interface-mode.md).
 - The desktop installer must keep resolving the install directory from the registry (`HKCU\Software\<appId>\InstallLocation`) for staged updates to follow a user-chosen directory.
 - Fork releases carry no code signature, so Windows shows the SmartScreen prompt on first install; electron-updater itself verifies only the `latest.yml` hash.
+
+The step-by-step runbook agents follow is [docs/agents/fork-releases.md](../agents/fork-releases.md).

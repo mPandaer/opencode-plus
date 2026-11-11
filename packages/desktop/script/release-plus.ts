@@ -90,10 +90,22 @@ if (process.argv.includes("--no-upload")) {
   process.exit(0)
 }
 
-await $`gh release create ${`v${VERSION}`} ${installer} latest.yml
-  --repo ${REPOSITORY}
-  --title ${`v${VERSION}`}
-  --notes ${`Fork desktop release on upstream ${VERSION.replace(/-plus\.\d+$/, "")}.`}
-  --latest`.cwd(packed)
+// `gh` resolves its repository from the git remote, and this checkout also has upstream as a remote. Pass the
+// target explicitly with one argv array: a multi-line shell template splits into several commands.
+await $`${[
+  "gh",
+  "release",
+  "create",
+  `v${VERSION}`,
+  installer,
+  "latest.yml",
+  "--repo",
+  REPOSITORY,
+  "--title",
+  `v${VERSION}`,
+  "--notes",
+  `Fork desktop release on upstream ${VERSION.replace(/-plus\.\d+$/, "")}.`,
+  "--latest",
+]}`.cwd(packed)
 
 console.log(`published ${VERSION} to ${REPOSITORY}`)

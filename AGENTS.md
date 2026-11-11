@@ -46,6 +46,16 @@ Examples: `fix(tui): simplify thinking toggle styling`, `docs: update contributi
 
 For user-facing `feat`, `fix` and `perf` PRs, add a small looping animated SVG of the change under `### Visual` in the PR body (a `svg` code block, 240×72, for example a dock growing out of the composer or spinners turning in step). Draw with `currentColor` and opacity so it works in light and dark, make the unanimated state a good still (it is shown under reduced motion), animate with CSS or SMIL only, and keep it under 8 KB with no scripts or external references. The desktop beta's "What's new" dialog shows it.
 
+## Fork Updates
+
+This repository ships its own desktop releases. See [ADR 0002](docs/adr/0002-fork-releases.md).
+
+- `plus` is the only long-lived branch: the upstream release tag plus the fork delta. Rebase it onto the latest upstream release tag (`v<version>`), never onto `origin/dev`; the dev-based rules above apply to changes intended for upstream, and this fork does not upstream.
+- Keep the delta a handful of logical commits. A fix needed before its release may be cherry-picked with the upstream commit sha in the message, and is dropped at the next rebase.
+- Never publish a plain upstream version to the fork feed. electron-updater sorts a release above its own prerelease and allows downgrades, so a stray `2.2.7` would be offered to every install. Fork versions are `<upstream>-plus.<n>`.
+- Every channel in `packages/desktop/electron-builder.config.ts` publishes to the fork's GitHub Releases; do not restore the `opencode.ai` feeds. The bundled CLI's upstream update check stays disabled.
+- What's New matches upstream release notes by the base version, stripping `-plus.<n>` before comparing.
+
 ## Style Guide
 
 ### General Principles
@@ -222,3 +232,15 @@ const table = sqliteTable("session", {
 - Keep delivery vocabulary explicit. Prompts steer by default. At safe step boundaries, steered compaction takes priority up to the first steered move control; other steers retain enqueue order. At an idle boundary, steers take priority; otherwise exactly one queued item delivers before the runner reevaluates continuation. Inbox items may be cancelled or changed between queue and steer before delivery. Promoting new user input resets the selected agent's step allowance; a batch of steers resets it once.
 - One step is one logical LLM call; its durable record covers only the model-visible span. Do not write "provider turn", and do not use bare "turn" for a single call: "turn" is reserved for the future assistant-turn unit containing all steps from prompt promotion until the session would go idle.
 - Keep event replay ownership separate from clustered Session execution ownership.
+
+## Agent skills
+
+### Issue tracker
+
+Specs and tickets use local Markdown. Before creating, fetching, or updating
+them, read docs/agents/issue-tracker.md.
+
+### Domain docs
+
+Use a single-context glossary and ADR layout. Before exploring domain behavior,
+read docs/agents/domain.md.

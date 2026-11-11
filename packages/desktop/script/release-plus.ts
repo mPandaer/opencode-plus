@@ -13,7 +13,10 @@ import path from "node:path"
 // host target, packs the unpacked app and the NSIS installer, then uploads the installer and latest.yml.
 const VERSION = process.env.OPENCODE_VERSION
 
-const CHANNEL = "prod"
+// The desktop's `resolveChannel` maps `latest` to its prod configuration. The CLI must be built as `latest`
+// because only the standard channels name the background service `service.json`, which the desktop probes;
+// any other value makes the CLI register `service-<channel>.json` and the app waits on its loading screen.
+const CHANNEL = "latest"
 
 const REPOSITORY = "mPandaer/opencode-plus"
 

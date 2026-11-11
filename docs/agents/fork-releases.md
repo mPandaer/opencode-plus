@@ -34,7 +34,8 @@ bun run release:plus               # the same, then creates the GitHub release
 
 `bun run release:plus` runs `script/release-plus.ts`, which:
 
-- builds the CLI for `windows-x64-baseline` (the package the desktop bundles for x64) and the desktop app for `windows-x64` with `OPENCODE_CHANNEL=prod`;
+- builds both halves with `OPENCODE_CHANNEL=latest`, never `prod`. The desktop's `resolveChannel` maps `latest` to its prod configuration, but a CLI only names its background service `service.json` and its database `opencode.db` for the standard channels (`latest`, `dev`, `beta`, `next`). A `prod` CLI registers `service-prod.json`, which the desktop never probes, so the app waits on its loading screen forever;
+- builds the CLI for `windows-x64-baseline` (the package the desktop bundles for x64) and the desktop app for `windows-x64`;
 - packs the unpacked app, then wraps that copy in the assisted NSIS installer;
 - rejects any version that does not match `^\d+\.\d+\.\d+-plus\.\d+$`;
 - rejects a `latest.yml` whose `version:` is not the requested one, or a missing installer;

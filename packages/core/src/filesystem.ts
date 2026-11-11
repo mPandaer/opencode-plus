@@ -48,6 +48,26 @@ export class DirectoryAccessDeniedError extends Schema.TaggedError<DirectoryAcce
   }
 }
 
+/** Fresh local placement probe; unlike Location startup this also detects deletion of a warm directory. */
+export const requireDirectory = Effect.fn("FileSystem.requireDirectory")(function* (ref: Location.Ref) {
+  if (ref.workspaceID) return
+  const fs = yield* FSUtil.Service
+  const info = yield* fs
+    .stat(ref.directory)
+    .pipe(
+      Effect.catch((cause) =>
+        cause.reason._tag === "NotFound" || FSUtil.isAccessDenied(cause)
+          ? Effect.fail(new DirectoryNotFoundError({ directory: ref.directory, cause }))
+          : Effect.die(cause),
+      ),
+    )
+  if (info.type !== "Directory")
+    return yield* new DirectoryNotFoundError({ directory: ref.directory, cause: "Not a directory" })
+  yield* fs
+    .access(ref.directory, { readable: true })
+    .pipe(Effect.mapError((cause) => new DirectoryNotFoundError({ directory: ref.directory, cause })))
+})
+
 export const Content = Schema.Struct({
   uri: Schema.String,
   name: Schema.String.pipe(Schema.optional),

@@ -8,7 +8,7 @@ import { and, desc, eq } from "drizzle-orm"
 import { Project } from "./project.js"
 import { Model } from "@opencode/schema/model"
 import { Location } from "./location.js"
-import type { FileSystem } from "./filesystem.js"
+import { FileSystem } from "./filesystem.js"
 import { SessionMessage } from "./session/message.js"
 import { PromptInput } from "@opencode/schema/prompt-input"
 import { Bus } from "./bus.js"
@@ -130,7 +130,9 @@ export interface Interface {
     },
     InvalidListCursorError
   >
-  readonly create: (input: CreateInput) => Effect.Effect<SessionSchema.Info, NotFoundError>
+  readonly create: (
+    input: CreateInput,
+  ) => Effect.Effect<SessionSchema.Info, NotFoundError | FileSystem.DirectoryNotFoundError>
   readonly fork: (
     input: ForkInput,
   ) => Effect.Effect<SessionSchema.Info, NotFoundError | MessageNotFoundError | ForkEmptyError>
@@ -267,6 +269,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const app = yield* App.Service
     const database = yield* Database.Service
+    const fs = yield* FSUtil.Service
     const db = database.db
     const bus = yield* Bus.Service
     const projects = yield* Project.Service
@@ -294,6 +297,7 @@ const layer = Layer.effect(
         const location = parent?.location ?? (input.location && LocationServiceMap.canonical(input.location))
         if (location === undefined)
           return yield* Effect.die(new Error("Session.create requires either location or an existing parentID"))
+        yield* FileSystem.requireDirectory(location).pipe(Effect.provideService(FSUtil.Service, fs))
         const project = yield* projects.resolve(location.directory)
         const projected = yield* bus
           .publish(

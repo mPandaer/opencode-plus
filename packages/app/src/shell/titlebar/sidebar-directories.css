@@ -1,0 +1,153 @@
+.sidebar-directory-search > :first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.sidebar-directory-search > :last-child {
+  flex: none;
+}
+
+.sidebar-directory {
+  position: relative;
+  margin-bottom: 4px;
+}
+
+.sidebar-directory-project-title {
+  position: relative;
+  height: 24px;
+}
+
+.sidebar-directory-project-add,
+.sidebar-directory-project-title > button {
+  position: absolute;
+  top: 0;
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  opacity: 0;
+}
+
+.sidebar-directory-project-add {
+  inset-inline-end: 28px;
+}
+
+.sidebar-directory-project-title > button {
+  inset-inline-end: 4px;
+}
+
+.sidebar-directory-project-title:is(:hover, :focus-within) {
+  padding-inline-end: 56px;
+}
+
+@media (hover: none) {
+  .sidebar-directory-project-add,
+  .sidebar-directory-project-title > button {
+    opacity: 1;
+  }
+
+  .sidebar-directory-project-title {
+    padding-inline-end: 56px;
+  }
+}
+
+.sidebar-directory-heading {
+  position: relative;
+  height: 28px;
+  padding: 0 4px;
+  gap: 4px;
+}
+
+.sidebar-directory-fold {
+  min-width: 0;
+  height: 28px;
+  gap: 4px;
+  padding-inline-start: 0;
+}
+
+.sidebar-directory-fold > div {
+  text-align: start;
+}
+
+/* Selection is a chip inside the session column, so the indent gutter stays visible. */
+.sidebar-directories [data-titlebar-tab-action] {
+  background: none;
+}
+
+.sidebar-directories [data-titlebar-tab-action]::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 20px;
+  inset-inline-end: 8px;
+  border-radius: 6px;
+  background: var(--tab-overlay);
+  pointer-events: none;
+  z-index: -1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-directory-project-title:is(:hover, :focus-within) .sidebar-directory-project-add,
+  .sidebar-directory-project-title:is(:hover, :focus-within) > button {
+    opacity: 1;
+  }
+
+  /* Actions keep fixed hit targets at the row end; only the quiet label reclaims the width. */
+  .sidebar-directory-heading > button:not(.sidebar-directory-fold) {
+    position: absolute;
+    top: 0;
+    height: 28px;
+    z-index: 1;
+    opacity: 0;
+  }
+
+  .sidebar-directory-new {
+    inset-inline-end: 28px;
+  }
+
+  .sidebar-directory-menu {
+    inset-inline-end: 4px;
+  }
+
+  .sidebar-directory-heading > button:not(.sidebar-directory-fold):not(.sidebar-directory-new):not(
+      .sidebar-directory-menu
+    ) {
+    inset-inline-end: 52px;
+  }
+
+  .sidebar-directory-heading:is(:hover, :focus-within, :has([data-state="open"]))
+    > button:not(.sidebar-directory-fold) {
+    opacity: 1;
+  }
+
+  .sidebar-directory-heading:is(:hover, :focus-within, :has([data-state="open"])) .sidebar-directory-fold {
+    padding-inline-end: 76px;
+  }
+}
+
+@media (hover: none) {
+  .sidebar-directory-heading > button:not(.sidebar-directory-fold) {
+    position: absolute;
+    top: 0;
+    height: 28px;
+    z-index: 1;
+    opacity: 1;
+  }
+
+  .sidebar-directory-new {
+    inset-inline-end: 28px;
+  }
+
+  .sidebar-directory-menu {
+    inset-inline-end: 4px;
+  }
+
+  .sidebar-directory-heading > button:not(.sidebar-directory-fold):not(.sidebar-directory-new):not(
+      .sidebar-directory-menu
+    ) {
+    inset-inline-end: 52px;
+  }
+
+  .sidebar-directory-fold {
+    padding-inline-end: 76px;
+  }
+}

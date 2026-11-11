@@ -133,7 +133,8 @@ const generalSchema = Persistence.struct({
   foldUserMessages: Schema.Boolean,
   // The redesigned keyboard-first question dock, off until it ships.
   newQuestionUI: Schema.Boolean,
-  sidebarOrganize: Schema.Literals(["projects", "list"]),
+  // Retired preference without readers; kept so stored values still decode and round-trip.
+  sidebarOrganize: Persistence.optional(Schema.Literals(["projects", "list"])),
   mobileTitlebarPosition: Schema.Literals(["top", "bottom"]),
   // Owned by the review plugin, which copies it out once; kept so settings rewrites cannot drop it first.
   mobileDiffWrap: Persistence.optional(Schema.Boolean),
@@ -145,8 +146,9 @@ const appearanceSchema = Persistence.struct({
   mono: Schema.String,
   sans: Schema.String,
   terminal: Schema.String,
-  // "inbox" is experimental: the vertical layout with a server-wide session inbox in place of tabs.
-  tabLayout: Schema.Literals(["horizontal", "vertical", "inbox"]),
+  // "inbox" and "directories" are experimental: the vertical layout with a server-wide session inbox
+  // or a working-directory tree in place of tabs.
+  tabLayout: Schema.Literals(["horizontal", "vertical", "inbox", "directories"]),
   sidebarOpen: Persistence.optional(Schema.Boolean),
   reduceMotion: Schema.Literals(["system", "on", "off"]),
 })
@@ -307,7 +309,6 @@ export const defaultSettings: Settings = {
     newIcons: false,
     foldUserMessages: false,
     newQuestionUI: false,
-    sidebarOrganize: "list",
     mobileTitlebarPosition: "top",
     followUpBehavior: "steer",
   },
@@ -425,10 +426,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         newQuestionUI: withFallback(() => store.general?.newQuestionUI, defaultSettings.general.newQuestionUI),
         setNewQuestionUI(value: boolean) {
           setStore("general", "newQuestionUI", value)
-        },
-        sidebarOrganize: withFallback(() => store.general?.sidebarOrganize, defaultSettings.general.sidebarOrganize),
-        setSidebarOrganize(value: "projects" | "list") {
-          setStore("general", "sidebarOrganize", value)
         },
         mobileTitlebarPosition: withFallback(
           () => store.general?.mobileTitlebarPosition,

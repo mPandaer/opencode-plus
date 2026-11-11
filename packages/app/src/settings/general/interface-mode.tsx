@@ -8,6 +8,7 @@ const modes = [
   { id: "top", layout: "horizontal" },
   { id: "side", layout: "vertical" },
   { id: "inbox", layout: "inbox" },
+  { id: "directories", layout: "directories" },
 ] as const satisfies { id: string; layout: TabLayout }[]
 
 export function InterfaceModeSetting() {
@@ -63,6 +64,19 @@ export function InterfaceModeSetting() {
                       </For>
                     </span>
                   </Match>
+                  <Match when={mode.id === "directories"}>
+                    <span data-slot="preview-rail">
+                      <For each={directoryRows}>
+                        {(kind, index) => (
+                          <span
+                            data-slot={kind === "directory" ? "preview-directory" : "preview-tab"}
+                            data-nested={kind === "session" ? "" : undefined}
+                            data-active={index() === 1 ? "" : undefined}
+                          />
+                        )}
+                      </For>
+                    </span>
+                  </Match>
                 </Switch>
                 <span data-slot="preview-page">
                   <span data-slot="preview-line" />
@@ -81,3 +95,6 @@ export function InterfaceModeSetting() {
 
 // Mirrors the inbox: a session that needs you, then finished work, then sessions still running.
 const inboxRows = ["approval", "done", "working", "working"] as const
+
+// Mirrors the directory tree: two directory headings with nested session rows.
+const directoryRows = ["directory", "session", "session", "directory", "session"] as const

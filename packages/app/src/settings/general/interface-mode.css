@@ -109,6 +109,25 @@
     }
   }
 
+  &[data-mode="directories"] [data-slot="preview-rail"] {
+    width: 34px;
+    gap: 3px;
+    padding: 5px 4px;
+  }
+
+  [data-slot="preview-directory"] {
+    width: 100%;
+    height: 4px;
+    border-radius: 1.5px;
+    background-color: var(--preview-ink);
+  }
+
+  [data-slot="preview-directory"] + [data-slot="preview-tab"],
+  [data-slot="preview-tab"][data-nested] {
+    width: 16px;
+    margin-inline-start: 4px;
+  }
+
   &[data-mode="inbox"] [data-slot="preview-tab"] {
     display: flex;
     align-items: center;

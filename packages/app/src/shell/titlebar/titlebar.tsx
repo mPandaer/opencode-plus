@@ -15,14 +15,18 @@ import { useLanguage } from "@/runtime/i18n/language"
 import { useSettings } from "@/settings/model"
 import { WindowsAppMenu } from "./windows-menu"
 import { createTitlebarHistory } from "./history"
+import { globalNewBusy, transitionGlobalNew, type GlobalNewEvent, type GlobalNewState } from "./global-new-machine"
 import { TitlebarTabStrip } from "@/shell/titlebar/tab-strip"
 import { macVerticalTrafficLights, SidebarToggle } from "@/shell/sidebar-toggle"
 import { SidebarInbox } from "@/shell/titlebar/inbox"
-import { SidebarOrganized } from "@/shell/titlebar/sidebar-organized"
+import { SidebarDirectories } from "@/shell/titlebar/sidebar-directories"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
 import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/shell/titlebar/session-events"
 import { useGlobal } from "@/runtime/server/runtime"
+import { useDirectoryPicker } from "@/workspaces/selection/picker"
+import { showToast } from "@/shell/notifications/toast"
+import { formatServerError } from "@/runtime/server/errors"
 import { ServerConnection } from "@/runtime/server/registry"
 import { tabKey, useTabs } from "@/shell/tabs/tabs"
 import type { ComposerState } from "@/composer/persistence"
@@ -201,16 +205,38 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
             const global = useGlobal()
 
             const tabs = useTabs()
+            const pickDirectory = useDirectoryPicker()
             const tabsStore = tabs.store
+            const [newState, setNewState] = createSignal<GlobalNewState>({ status: "idle", attempt: 0 })
+            let newTimer: ReturnType<typeof setTimeout> | undefined
+            const newServer = () => {
+              const selection = layout.home.selection()
+              const conn =
+                global.servers.list().find((item) => ServerConnection.key(item) === selection.server) ??
+                global.servers.list()[0]
+              return conn ? ServerConnection.key(conn) : ""
+            }
+            const dispatchNew = (event: GlobalNewEvent) => {
+              const previous = untrack(newState)
+              const next = transitionGlobalNew(previous, event)
+              if (next === previous) return false
+              clearTimeout(newTimer)
+              setNewState(next)
+              if (globalNewBusy(next) && "server" in next)
+                newTimer = setTimeout(
+                  () => dispatchNew({ type: "timed-out", attempt: next.attempt, server: next.server }),
+                  30_000,
+                )
+              return true
+            }
+            createEffect(() => {
+              const server = newServer()
+              untrack(() => dispatchNew({ type: "target", server }))
+            })
+            onCleanup(() => dispatchNew({ type: "disposed" }))
 
             createEffect(() => {
-              if (
-                settings.appearance.tabLayout() === "vertical" &&
-                settings.general.sidebarOrganize() === "projects" &&
-                !mobile()
-              )
-                return
-
+              if (settings.appearance.tabLayout() === "directories" && !mobile()) return
               if (tabs.preview()) tabs.keepPreview()
             })
             const tabsStoreActions = tabs
@@ -254,7 +280,12 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
 
                   const model = tabs.stateValue<ComposerState>(sessionTab, "prompt")?.model.current()
                   void tabs.newDraft(
-                    { server: sessionTab.server, directory: activeSession.location.directory, draftID },
+                    {
+                      server: sessionTab.server,
+                      directory: activeSession.location.directory,
+                      draftID,
+                      worktree: "main",
+                    },
                     "",
                     model,
                   )
@@ -283,20 +314,44 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                     global.servers.list().find((item) => ServerConnection.key(item) === selection.server) ??
                     global.servers.list()[0]
 
-                  const projects = conn ? global.serverCtx(ServerConnection.key(conn))?.projects : undefined
+                  if (!conn) return false
+                  const server = ServerConnection.key(conn)
+                  const ctx = global.serverCtx(server)
+                  if (!ctx) return false
 
-                  const project =
-                    projects?.list().find((item) => item.worktree === selection.directory) ??
-                    projects?.last() ??
-                    projects?.list()[0]
-
-                  if (conn && project) {
-                    void tabs.newDraft({ server: ServerConnection.key(conn), directory: project.worktree, draftID }, "")
-
-                    return true
-                  }
-
-                  return false
+                  if (!dispatchNew({ type: "start", server })) return true
+                  const claimed = newState()
+                  if (!("attempt" in claimed)) return true
+                  const attempt = claimed.attempt
+                  void Promise.resolve(ctx.workingDirectory.ready.promise)
+                    .then(() => {
+                      dispatchNew({ type: "target", server: newServer() })
+                      const directory = ctx.workingDirectory.last()
+                      if (!dispatchNew({ type: "resolved", attempt, server, pick: !directory })) return
+                      if (directory) {
+                        void tabs.newDraft({ server, directory, draftID, worktree: "main" }, "")
+                        return
+                      }
+                      pickDirectory({
+                        server: conn,
+                        title: language.t("session.new.directory.change"),
+                        onSelect: (result) => {
+                          dispatchNew({ type: "target", server: newServer() })
+                          if (!dispatchNew({ type: "finished", attempt, server })) return
+                          const directory = Array.isArray(result) ? result[0] : result
+                          if (directory) void tabs.newDraft({ server, directory, draftID, worktree: "main" }, "")
+                        },
+                      })
+                    })
+                    .catch((error) => {
+                      if (!dispatchNew({ type: "failed", attempt, server })) return
+                      showToast({
+                        variant: "error",
+                        title: language.t("common.requestFailed"),
+                        description: formatServerError(error, language.t),
+                      })
+                    })
+                  return true
                 }
               }
             }
@@ -798,19 +853,16 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                             </div>
                             <div class="h-4 w-full shrink-0" aria-hidden="true" />
                             <div class="flex min-h-0 flex-1 flex-col gap-1">
-                              <Show
-                                when={settings.appearance.tabLayout() === "inbox"}
-                                fallback={
-                                  <Show
-                                    when={settings.general.sidebarOrganize() === "projects"}
-                                    fallback={verticalTabStrip()}
-                                  >
-                                    <SidebarOrganized currentTab={currentTab()}>{verticalTabStrip}</SidebarOrganized>
-                                  </Show>
-                                }
-                              >
-                                <SidebarInbox />
-                              </Show>
+                              <Switch fallback={verticalTabStrip()}>
+                                <Match when={settings.appearance.tabLayout() === "inbox"}>
+                                  <SidebarInbox />
+                                </Match>
+                                <Match when={settings.appearance.tabLayout() === "directories"}>
+                                  <SidebarDirectories currentTab={currentTab()} fallback={verticalTabStrip}>
+                                    {verticalTabStrip}
+                                  </SidebarDirectories>
+                                </Match>
+                              </Switch>
                             </div>
                             <Show when={titlebarItems.ids().length > 0}>
                               <div data-slot="vertical-tabs-footer" class="mt-2 flex w-full shrink-0 flex-col">
